@@ -1,0 +1,39 @@
+{
+  "name": "@mirador/parallax",
+  "version": "1.0.0",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "prepare": "npm run build",
+    "build": "tsc"
+  },
+  "keywords": [
+    "parallax",
+    "sdk",
+    "typescript",
+    "grpc",
+    "mirador"
+  ],
+  "author": "@mirador",
+  "license": "ISC",
+  "description": "Parallax SDK for TypeScript",
+  "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "@types/node": "^24.10.1",
+    "eslint": "^9.39.1",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.4",
+    "globals": "^16.5.0",
+    "jiti": "^2.6.1",
+    "prettier": "^3.6.2",
+    "ts-proto": "^2.8.3",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.47.0"
+  },
+  "dependencies": {
+    "@grpc/grpc-js": "^1.14.1",
+    "google-protobuf": "^4.0.1",
+    "mirador-gateway-api": "https://storage.googleapis.com/mirador-shd-packages/gateway/api/mirador-gateway-api-1.0.1.tgz",
+    "rxjs": "^7.8.2"
+  }
+}
