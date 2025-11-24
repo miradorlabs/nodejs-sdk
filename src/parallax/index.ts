@@ -54,7 +54,7 @@ class ParallaxClient {
       const apiGatewayClient = new apiGateway.ApiGatewayServiceClientImpl(
         this.apiGatewayRpc
       );
-      return apiGatewayClient.StartSpan(params);
+      return await apiGatewayClient.StartSpan(params);
     } catch (_error) {
       debugIssue("startSpan", new Error('Error starting span'));
       throw _error;
