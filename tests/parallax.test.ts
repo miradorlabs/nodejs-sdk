@@ -1,8 +1,8 @@
 // ParallaxClient Unit Tests
 import { ParallaxClient } from '../src/parallax';
 import { NodeGrpcRpc } from '../src/grpc';
-import * as apiGateway from 'mirador-gateway-api/proto/gateway/api/v1/api_gateway';
-import { ResponseStatus_StatusCode } from 'mirador-gateway-api/proto/common/v1/status';
+import * as apiGateway from "mirador-gateway-parallax/proto/gateway/parallax/v1/parallax_gateway";
+import { ResponseStatus_StatusCode } from "mirador-gateway-parallax/proto/common/v1/status";
 
 // Mock the NodeGrpcRpc class
 jest.mock('../src/grpc');
@@ -12,14 +12,14 @@ const mockConsoleError = jest.spyOn(console, 'error').mockImplementation();
 
 describe('ParallaxClient', () => {
   let parallaxClient: ParallaxClient;
-  let mockApiGatewayClient: jest.Mocked<apiGateway.ApiGatewayServiceClientImpl>;
+  let mockApiGatewayClient: jest.Mocked<apiGateway.ParallaxGatewayServiceClientImpl>;
 
   beforeEach(() => {
     // Clear all mocks before each test
     jest.clearAllMocks();
 
     // Create a new ParallaxClient instance
-    parallaxClient = new ParallaxClient('test-api-key');
+    parallaxClient = new ParallaxClient("test-api-key");
 
     // Create mock for ApiGatewayServiceClientImpl
     mockApiGatewayClient = {
@@ -30,10 +30,12 @@ describe('ParallaxClient', () => {
       AddSpanEvent: jest.fn(),
       AddSpanError: jest.fn(),
       AddSpanHint: jest.fn(),
-    } as unknown as jest.Mocked<apiGateway.ApiGatewayServiceClientImpl>;
+    } as unknown as jest.Mocked<apiGateway.ParallaxGatewayServiceClientImpl>;
 
-    // Mock the ApiGatewayServiceClientImpl constructor
-    jest.spyOn(apiGateway, 'ApiGatewayServiceClientImpl').mockImplementation(() => mockApiGatewayClient);
+    // Mock the ParallaxGatewayServiceClientImpl constructor
+    jest
+      .spyOn(apiGateway, "ParallaxGatewayServiceClientImpl")
+      .mockImplementation(() => mockApiGatewayClient);
   });
 
   afterEach(() => {

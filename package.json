@@ -40,7 +40,7 @@
   "dependencies": {
     "@grpc/grpc-js": "^1.14.1",
     "google-protobuf": "^4.0.1",
-    "mirador-gateway-api": "https://storage.googleapis.com/mirador-shd-packages/gateway/api/mirador-gateway-api-1.0.1.tgz",
+    "mirador-gateway-parallax": "https://storage.googleapis.com/mirador-shd-packages/gateway/parallax/mirador-gateway-parallax-1.0.1.tgz",
     "rxjs": "^7.8.2"
   }
 }

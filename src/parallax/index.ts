@@ -8,8 +8,8 @@ import type {
   AddSpanEventRequest,
   AddSpanErrorRequest,
   AddSpanHintRequest
-} from "mirador-gateway-api/proto/gateway/api/v1/api_gateway";
-import * as apiGateway from "mirador-gateway-api/proto/gateway/api/v1/api_gateway";
+} from "mirador-gateway-parallax/proto/gateway/parallax/v1/parallax_gateway";
+import * as apiGateway from "mirador-gateway-parallax/proto/gateway/parallax/v1/parallax_gateway";
 import { NodeGrpcRpc } from "../grpc";
 
 
@@ -35,7 +35,7 @@ class ParallaxClient {
    */
   async createTrace(params: CreateTraceRequest): Promise<apiGateway.CreateTraceResponse> {
     try {
-      const apiGatewayClient = new apiGateway.ApiGatewayServiceClientImpl(
+      const apiGatewayClient = new apiGateway.ParallaxGatewayServiceClientImpl(
         this.apiGatewayRpc
       );
       return await apiGatewayClient.CreateTrace(params);
@@ -51,7 +51,7 @@ class ParallaxClient {
    */
   async startSpan(params: StartSpanRequest) {
     try {
-      const apiGatewayClient = new apiGateway.ApiGatewayServiceClientImpl(
+      const apiGatewayClient = new apiGateway.ParallaxGatewayServiceClientImpl(
         this.apiGatewayRpc
       );
       return await apiGatewayClient.StartSpan(params);
@@ -67,7 +67,7 @@ class ParallaxClient {
    */
   async finishSpan(params: FinishSpanRequest) {
     try {
-      const apiGatewayClient = new apiGateway.ApiGatewayServiceClientImpl(
+      const apiGatewayClient = new apiGateway.ParallaxGatewayServiceClientImpl(
         this.apiGatewayRpc
       );
       return await apiGatewayClient.FinishSpan(params);
@@ -83,7 +83,7 @@ class ParallaxClient {
    */
   async addSpanAttributes(params: AddSpanAttributesRequest) {
     try {
-      const apiGatewayClient = new apiGateway.ApiGatewayServiceClientImpl(
+      const apiGatewayClient = new apiGateway.ParallaxGatewayServiceClientImpl(
         this.apiGatewayRpc
       );
       return await apiGatewayClient.AddSpanAttributes(params);
@@ -99,7 +99,7 @@ class ParallaxClient {
    */
   async addSpanEvent(params: AddSpanEventRequest) {
     try {
-      const apiGatewayClient = new apiGateway.ApiGatewayServiceClientImpl(
+      const apiGatewayClient = new apiGateway.ParallaxGatewayServiceClientImpl(
         this.apiGatewayRpc
       );
       return await apiGatewayClient.AddSpanEvent(params);
@@ -115,7 +115,7 @@ class ParallaxClient {
    */
   async addSpanError(params: AddSpanErrorRequest) {
     try {
-      const apiGatewayClient = new apiGateway.ApiGatewayServiceClientImpl(
+      const apiGatewayClient = new apiGateway.ParallaxGatewayServiceClientImpl(
         this.apiGatewayRpc
       );
       return await apiGatewayClient.AddSpanError(params);
@@ -131,7 +131,7 @@ class ParallaxClient {
    */
   async addSpanHint(params: AddSpanHintRequest) {
     try {
-      const apiGatewayClient = new apiGateway.ApiGatewayServiceClientImpl(
+      const apiGatewayClient = new apiGateway.ParallaxGatewayServiceClientImpl(
         this.apiGatewayRpc
       );
       return await apiGatewayClient.AddSpanHint(params);

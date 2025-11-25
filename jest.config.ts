@@ -19,7 +19,7 @@ const config: Config = {
     '^.+\\.tsx?$': 'ts-jest',
   },
   transformIgnorePatterns: [
-    'node_modules/(?!(mirador-gateway-api)/)'
+    'node_modules/(?!(mirador-gateway-parallax)/)'
   ],
 };
 
