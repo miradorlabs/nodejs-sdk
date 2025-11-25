@@ -1,4 +1,3 @@
-
 // Parallax SDK Client
 import type {
   CreateTraceRequest,
