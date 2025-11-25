@@ -4,7 +4,7 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "prepare": "mkdir dist/ && npm run build",
+    "prepare": "rm -rf dist/ && mkdir dist/ && npm run build",
     "build": "tsc",
     "test": "jest",
     "test:watch": "jest --watch",
