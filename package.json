@@ -1,8 +1,12 @@
 {
-  "name": "@mirador/parallax",
+  "name": "@miradorlabs/parallax",
   "version": "1.0.4",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "publishConfig": {
+    "access": "restricted",
+    "registry": "https://registry.npmjs.org/"
+  },
   "scripts": {
     "prepare": "npm run build",
     "build": "rm -rf dist/ && rollup -c",
