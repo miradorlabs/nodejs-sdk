@@ -31,6 +31,8 @@ class ParallaxClient {
 
   /**
    * Create a new trace
+   * @param params Parameters to create a new trace
+   * @returns Response from the create trace operation
    */
   async createTrace(params: CreateTraceRequest): Promise<apiGateway.CreateTraceResponse> {
     try {
@@ -40,6 +42,23 @@ class ParallaxClient {
       return await apiGatewayClient.CreateTrace(params);
     } catch (_error) {
       debugIssue("createTrace", new Error('Error creating trace'));
+      throw _error;
+    }
+  }
+
+  /**
+   * Update the tags of a trace
+   * @param params Parameters to update trace tags
+   * @returns Response from the update trace tags operation
+   */
+  async updateTraceTags(params: apiGateway.UpdateTraceTagsRequest): Promise<apiGateway.UpdateTraceTagsResponse> {
+    try {
+      const apiGatewayClient = new apiGateway.ParallaxGatewayServiceClientImpl(
+        this.apiGatewayRpc
+      );
+      return await apiGatewayClient.UpdateTraceTags(params);
+    } catch (_error) {
+      debugIssue("updateTraceTags", new Error('Error updating trace tags'));
       throw _error;
     }
   }
