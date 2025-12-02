@@ -74,6 +74,7 @@ describe('ParallaxClient', () => {
           'project.id': 'test-project',
           'environment': 'test'
         },
+        tags: ['tag1', 'tag2'],
       };
 
       const mockResponse: apiGateway.CreateTraceResponse = {
@@ -97,6 +98,7 @@ describe('ParallaxClient', () => {
       const mockRequest: apiGateway.CreateTraceRequest = {
         name: 'Test Trace',
         attributes: {},
+        tags: ['tag1', 'tag2'],
       };
 
       const mockError = new Error('gRPC connection failed');
@@ -392,6 +394,7 @@ describe('ParallaxClient', () => {
         attributes: {
           'project.id': 'test-project'
         },
+        tags: ['tag1', 'tag2'],
       };
 
       const spanRequest: apiGateway.StartSpanRequest = {

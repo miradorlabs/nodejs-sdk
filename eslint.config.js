@@ -20,6 +20,10 @@ export default [
   ...tseslint.configs.recommended.map(config => ({
     ...config,
     files: ["**/*.{ts,tsx}"],
+    rules: {
+      ...(config.rules || {}),
+      "react-refresh/only-export-components": "off",
+    },
   })),
   {
     files: ["**/*.{ts,tsx}"],
