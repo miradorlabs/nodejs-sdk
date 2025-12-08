@@ -3,7 +3,6 @@ import type {
   CreateTraceRequest,
   StartSpanRequest,
   FinishSpanRequest,
-  AddSpanAttributesRequest,
   AddSpanEventRequest,
   AddSpanErrorRequest,
   AddSpanHintRequest
@@ -11,8 +10,7 @@ import type {
 import * as apiGateway from "mirador-gateway-parallax/proto/gateway/parallax/v1/parallax_gateway";
 import { NodeGrpcRpc } from "../grpc";
 
-
-const GRPC_GATEWAY_API_URL = process.env.GRPC_BASE_URL_API || "localhost:50053";
+const GRPC_GATEWAY_API_URL = process.env.GRPC_BASE_URL_API || "parallax-gateway.dev.mirador.org:443";
 
 const debugIssue = (trace: string, error: Error) => {
   // Handle our own debugging / logging here
@@ -47,23 +45,6 @@ class ParallaxClient {
   }
 
   /**
-   * Update the tags of a trace
-   * @param params Parameters to update trace tags
-   * @returns Response from the update trace tags operation
-   */
-  async updateTraceTags(params: apiGateway.UpdateTraceTagsRequest): Promise<apiGateway.UpdateTraceTagsResponse> {
-    try {
-      const apiGatewayClient = new apiGateway.ParallaxGatewayServiceClientImpl(
-        this.apiGatewayRpc
-      );
-      return await apiGatewayClient.UpdateTraceTags(params);
-    } catch (_error) {
-      debugIssue("updateTraceTags", new Error('Error updating trace tags'));
-      throw _error;
-    }
-  }
-
-  /**
    * Start a new span within a trace
    * @param params Parameters to start a new span
    */
@@ -91,22 +72,6 @@ class ParallaxClient {
       return await apiGatewayClient.FinishSpan(params);
     } catch (_error) {
       debugIssue("finishSpan", new Error('Error finishing span'));
-      throw _error;
-    }
-  }
-
-  /**
-   * Add attributes to a span
-   * @param params Parameters to add attributes to a span
-   */
-  async addSpanAttributes(params: AddSpanAttributesRequest) {
-    try {
-      const apiGatewayClient = new apiGateway.ParallaxGatewayServiceClientImpl(
-        this.apiGatewayRpc
-      );
-      return await apiGatewayClient.AddSpanAttributes(params);
-    } catch (_error) {
-      debugIssue("addSpanAttributes", new Error('Error adding span attributes'));
       throw _error;
     }
   }
