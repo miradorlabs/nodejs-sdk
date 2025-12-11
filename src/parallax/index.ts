@@ -10,7 +10,7 @@ import type {
 import * as apiGateway from "mirador-gateway-parallax/proto/gateway/parallax/v1/parallax_gateway";
 import { NodeGrpcRpc } from "../grpc";
 
-const GRPC_GATEWAY_API_URL = process.env.GRPC_BASE_URL_API || "parallax-gateway.dev.mirador.org:443";
+const GRPC_GATEWAY_API_URL = process.env.GRPC_BASE_URL_API || "gateway-parallax-dev.platform.svc.cluster.local:50053";
 
 const debugIssue = (trace: string, error: Error) => {
   // Handle our own debugging / logging here
@@ -20,10 +20,8 @@ const debugIssue = (trace: string, error: Error) => {
 class ParallaxClient {
   private apiUrl: string = GRPC_GATEWAY_API_URL;
   private apiGatewayRpc: NodeGrpcRpc;
-  // TODO: eventually we use this to pass the api key into the NodeGrpcRpc headers
+
   constructor(public apiKey?: string) {
-    // TODO: add apiKey integration for sdk consumption
-    // TODO: add the options into the apiGatewayRpc initialization.
     this.apiGatewayRpc = new NodeGrpcRpc(this.apiUrl, apiKey);
   }
 

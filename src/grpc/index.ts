@@ -33,15 +33,15 @@ interface Rpc {
 export class NodeGrpcRpc implements Rpc {
   private channel: grpc.Channel;
   private url: string;
+  private apiKey?: string;
 
   constructor(url: string, apiKey?: string) {
     this.url = url;
+    this.apiKey = apiKey;
     this.channel = new grpc.Channel(
       url,
       grpc.ChannelCredentials.createInsecure(),
-      {
-        ...(apiKey ? { "x-api-key": apiKey } : {})
-      }
+      {}
     );
   }
 
@@ -57,6 +57,12 @@ export class NodeGrpcRpc implements Rpc {
       const client = new grpc.Client(this.url, credentials);
 
       const grpcMetadata = metadata || new grpc.Metadata();
+
+      // Add API key to metadata if provided
+      if (this.apiKey) {
+        grpcMetadata.add('x-api-key', this.apiKey);
+      }
+
       const deadline = new Date();
       deadline.setSeconds(deadline.getSeconds() + 5);
 
@@ -100,6 +106,11 @@ export class NodeGrpcRpc implements Rpc {
       const client = new grpc.Client(this.url, credentials);
 
       const metadata = new grpc.Metadata();
+
+      // Add API key to metadata if provided
+      if (this.apiKey) {
+        metadata.add('x-api-key', this.apiKey);
+      }
 
       const call = client.makeServerStreamRequest(
         `/${service}/${method}`,
