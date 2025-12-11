@@ -18,10 +18,13 @@ const debugIssue = (trace: string, error: Error) => {
 }
 
 class ParallaxClient {
-  private apiUrl: string = GRPC_GATEWAY_API_URL;
+  public apiUrl: string = GRPC_GATEWAY_API_URL;
   private apiGatewayRpc: NodeGrpcRpc;
 
-  constructor(public apiKey?: string) {
+  constructor(public apiKey?: string, apiUrl?: string) {
+    if (apiUrl) {
+      this.apiUrl = apiUrl;
+    }
     this.apiGatewayRpc = new NodeGrpcRpc(this.apiUrl, apiKey);
   }
 
