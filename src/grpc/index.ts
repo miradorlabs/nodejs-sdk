@@ -31,18 +31,20 @@ interface Rpc {
 }
 
 export class NodeGrpcRpc implements Rpc {
-  private channel: grpc.Channel;
+  private client: grpc.Client;
   private url: string;
   private apiKey?: string;
 
   constructor(url: string, apiKey?: string) {
     this.url = url;
     this.apiKey = apiKey;
-    this.channel = new grpc.Channel(
-      url,
-      grpc.ChannelCredentials.createInsecure(),
-      {}
-    );
+    // Create a single reusable client with connection pooling
+    const credentials = grpc.ChannelCredentials.createSsl();
+    this.client = new grpc.Client(url, credentials, {
+      'grpc.keepalive_time_ms': 30000,
+      'grpc.keepalive_timeout_ms': 10000,
+      'grpc.keepalive_permit_without_calls': 1,
+    });
   }
 
   async request(
@@ -53,9 +55,6 @@ export class NodeGrpcRpc implements Rpc {
   ): Promise<Uint8Array> {
     return new Promise((resolve, reject) => {
       console.log(`[gRPC] Making request to ${this.url}/${service}/${method}`);
-      const credentials = grpc.ChannelCredentials.createInsecure();
-      const client = new grpc.Client(this.url, credentials);
-
       const grpcMetadata = metadata || new grpc.Metadata();
 
       // Add API key to metadata if provided
@@ -66,8 +65,8 @@ export class NodeGrpcRpc implements Rpc {
       const deadline = new Date();
       deadline.setSeconds(deadline.getSeconds() + 5);
 
-      // Make the unary RPC call
-      client.makeUnaryRequest(
+      // Make the unary RPC call using the reusable client
+      this.client.makeUnaryRequest(
         `/${service}/${method}`,
         serialize,
         deserialize,
@@ -102,9 +101,6 @@ export class NodeGrpcRpc implements Rpc {
     data: Uint8Array
   ): Observable<Uint8Array> {
     return new Observable((subscriber) => {
-      const credentials = grpc.ChannelCredentials.createInsecure();
-      const client = new grpc.Client(this.url, credentials);
-
       const metadata = new grpc.Metadata();
 
       // Add API key to metadata if provided
@@ -112,7 +108,8 @@ export class NodeGrpcRpc implements Rpc {
         metadata.add('x-api-key', this.apiKey);
       }
 
-      const call = client.makeServerStreamRequest(
+      // Use the reusable client
+      const call = this.client.makeServerStreamRequest(
         `/${service}/${method}`,
         serialize,
         deserialize,
