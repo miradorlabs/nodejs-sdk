@@ -26,7 +26,6 @@ describe('ParallaxClient', () => {
       CreateTrace: jest.fn(),
       StartSpan: jest.fn(),
       FinishSpan: jest.fn(),
-      AddSpanAttributes: jest.fn(),
       AddSpanEvent: jest.fn(),
       AddSpanError: jest.fn(),
       AddSpanHint: jest.fn(),
@@ -62,7 +61,7 @@ describe('ParallaxClient', () => {
     it('should initialize NodeGrpcRpc with the correct URL and API key', () => {
       const apiKey = 'test-key';
       new ParallaxClient(apiKey);
-      expect(NodeGrpcRpc).toHaveBeenCalledWith('localhost:50053', apiKey);
+      expect(NodeGrpcRpc).toHaveBeenCalledWith('gateway-parallax-dev.platform.svc.cluster.local:50053', apiKey);
     });
   });
 
@@ -78,11 +77,12 @@ describe('ParallaxClient', () => {
       };
 
       const mockResponse: apiGateway.CreateTraceResponse = {
-        status: { 
+        status: {
           code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
           errorMessage: undefined
         },
         traceId: 'trace-123',
+        rootSpanId: 'span-root',
       };
 
       mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
@@ -117,7 +117,7 @@ describe('ParallaxClient', () => {
       const mockRequest: apiGateway.StartSpanRequest = {
         name: 'Test Span',
         traceId: 'trace-123',
-        parentSpanId: undefined,
+        parentSpanId: 'test-123',
         attributes: {
           'span.type': 'http'
         },
@@ -145,6 +145,7 @@ describe('ParallaxClient', () => {
       const mockRequest: apiGateway.StartSpanRequest = {
         name: 'Test Span',
         traceId: 'trace-123',
+        parentSpanId: 'test-123',
         attributes: {},
       };
 
@@ -196,51 +197,6 @@ describe('ParallaxClient', () => {
       await expect(parallaxClient.finishSpan(mockRequest)).rejects.toThrow('Finish span failed');
       expect(mockConsoleError).toHaveBeenCalledWith(
         '[ParallaxClient][finishSpan] Error:',
-        expect.any(Error)
-      );
-    });
-  });
-
-  describe('addSpanAttributes', () => {
-    it('should add span attributes successfully', async () => {
-      const mockRequest: apiGateway.AddSpanAttributesRequest = {
-        traceId: 'trace-123',
-        spanId: 'span-456',
-        attributes: {
-          key1: 'value1',
-          key2: 'value2',
-        },
-      };
-
-      const mockResponse: apiGateway.AddSpanAttributesResponse = {
-        status: { 
-          code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
-          errorMessage: undefined
-        },
-      };
-
-      mockApiGatewayClient.AddSpanAttributes.mockResolvedValue(mockResponse);
-
-      const result = await parallaxClient.addSpanAttributes(mockRequest);
-
-      expect(result).toEqual(mockResponse);
-      expect(mockApiGatewayClient.AddSpanAttributes).toHaveBeenCalledWith(mockRequest);
-      expect(mockApiGatewayClient.AddSpanAttributes).toHaveBeenCalledTimes(1);
-    });
-
-    it('should handle errors when adding span attributes', async () => {
-      const mockRequest: apiGateway.AddSpanAttributesRequest = {
-        traceId: 'trace-123',
-        spanId: 'span-456',
-        attributes: {},
-      };
-
-      const mockError = new Error('Add attributes failed');
-      mockApiGatewayClient.AddSpanAttributes.mockRejectedValue(mockError);
-
-      await expect(parallaxClient.addSpanAttributes(mockRequest)).rejects.toThrow('Add attributes failed');
-      expect(mockConsoleError).toHaveBeenCalledWith(
-        '[ParallaxClient][addSpanAttributes] Error:',
         expect.any(Error)
       );
     });
@@ -400,12 +356,14 @@ describe('ParallaxClient', () => {
       const spanRequest: apiGateway.StartSpanRequest = {
         name: 'Integration Span',
         traceId: 'trace-123',
+        parentSpanId: 'span-root',
         attributes: {},
       };
 
-      mockApiGatewayClient.CreateTrace.mockResolvedValue({ 
-        traceId: 'trace-123', 
-        status: { 
+      mockApiGatewayClient.CreateTrace.mockResolvedValue({
+        traceId: 'trace-123',
+        rootSpanId: 'span-root',
+        status: {
           code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
           errorMessage: undefined
         }
