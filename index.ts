@@ -5,17 +5,5 @@ export { NodeGrpcRpc } from './src/grpc';
 export type {
   CreateTraceRequest,
   CreateTraceResponse,
-  StartSpanRequest,
-  StartSpanResponse,
-  FinishSpanRequest,
-  FinishSpanResponse,
-  AddSpanEventRequest,
-  AddSpanEventResponse,
-  AddSpanErrorRequest,
-  AddSpanErrorResponse,
-  AddSpanHintRequest,
-  AddSpanHintResponse
+  CreateTraceRequest_Event,
 } from 'mirador-gateway-parallax/proto/gateway/parallax/v1/parallax_gateway';
-
-// Re-export enums
-export { FinishSpanRequest_SpanStatus_StatusCode } from 'mirador-gateway-parallax/proto/gateway/parallax/v1/parallax_gateway';

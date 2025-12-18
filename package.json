@@ -13,6 +13,7 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
+    "cli": "tsx ./example/cli.ts",
     "release:patch": "npm version patch && git push --follow-tags",
     "release:minor": "npm version minor && git push --follow-tags",
     "release:major": "npm version major && git push --follow-tags"
@@ -46,13 +47,14 @@
     "ts-jest": "^29.4.5",
     "ts-node": "^10.9.2",
     "ts-proto": "^2.8.3",
+    "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.47.0"
   },
   "dependencies": {
     "@grpc/grpc-js": "^1.14.1",
     "google-protobuf": "^4.0.1",
-    "mirador-gateway-parallax": "https://storage.googleapis.com/mirador-shd-packages/gateway/parallax/nodejs/mirador-gateway-parallax-1.0.10.tgz",
+    "mirador-gateway-parallax": "https://storage.googleapis.com/mirador-shd-packages/gateway/parallax/nodejs/mirador-gateway-parallax-1.0.11.tgz",
     "rxjs": "^7.8.2"
   }
 }

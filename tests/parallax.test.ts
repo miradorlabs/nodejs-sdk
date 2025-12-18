@@ -1,5 +1,5 @@
 // ParallaxClient Unit Tests
-import { ParallaxClient } from '../src/parallax';
+import { ParallaxClient, ParallaxTrace } from '../src/parallax';
 import { NodeGrpcRpc } from '../src/grpc';
 import * as apiGateway from "mirador-gateway-parallax/proto/gateway/parallax/v1/parallax_gateway";
 import { ResponseStatus_StatusCode } from "mirador-gateway-parallax/proto/common/v1/status";
@@ -24,11 +24,6 @@ describe('ParallaxClient', () => {
     // Create mock for ApiGatewayServiceClientImpl
     mockApiGatewayClient = {
       CreateTrace: jest.fn(),
-      StartSpan: jest.fn(),
-      FinishSpan: jest.fn(),
-      AddSpanEvent: jest.fn(),
-      AddSpanError: jest.fn(),
-      AddSpanHint: jest.fn(),
     } as unknown as jest.Mocked<apiGateway.ParallaxGatewayServiceClientImpl>;
 
     // Mock the ParallaxGatewayServiceClientImpl constructor
@@ -63,10 +58,17 @@ describe('ParallaxClient', () => {
       new ParallaxClient(apiKey);
       expect(NodeGrpcRpc).toHaveBeenCalledWith('gateway-parallax-dev.platform.svc.cluster.local:50053', apiKey);
     });
+
+    it('should use custom API URL if provided', () => {
+      const apiKey = 'test-key';
+      const customUrl = 'custom-gateway.example.com:50053';
+      new ParallaxClient(apiKey, customUrl);
+      expect(NodeGrpcRpc).toHaveBeenCalledWith(customUrl, apiKey);
+    });
   });
 
   describe('createTrace', () => {
-    it('should create a trace successfully', async () => {
+    it('should create a trace successfully with basic attributes', async () => {
       const mockRequest: apiGateway.CreateTraceRequest = {
         name: 'Test Trace',
         attributes: {
@@ -74,6 +76,8 @@ describe('ParallaxClient', () => {
           'environment': 'test'
         },
         tags: ['tag1', 'tag2'],
+        events: [],
+        txHashHint: undefined,
       };
 
       const mockResponse: apiGateway.CreateTraceResponse = {
@@ -82,7 +86,6 @@ describe('ParallaxClient', () => {
           errorMessage: undefined
         },
         traceId: 'trace-123',
-        rootSpanId: 'span-root',
       };
 
       mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
@@ -94,11 +97,86 @@ describe('ParallaxClient', () => {
       expect(mockApiGatewayClient.CreateTrace).toHaveBeenCalledTimes(1);
     });
 
+    it('should create a trace with events', async () => {
+      const mockRequest: apiGateway.CreateTraceRequest = {
+        name: 'Payment Trace',
+        attributes: {
+          userId: '123',
+          environment: 'production'
+        },
+        tags: ['payment', 'critical'],
+        events: [
+          {
+            eventName: 'payment.initiated',
+            details: JSON.stringify({ amount: 100, currency: 'USD' }),
+            timestamp: new Date('2024-01-01T00:00:00Z')
+          },
+          {
+            eventName: 'payment.processed',
+            details: JSON.stringify({ status: 'success' }),
+            timestamp: new Date('2024-01-01T00:00:05Z')
+          }
+        ],
+        txHashHint: undefined,
+      };
+
+      const mockResponse: apiGateway.CreateTraceResponse = {
+        status: {
+          code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
+          errorMessage: undefined
+        },
+        traceId: 'trace-456',
+      };
+
+      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+
+      const result = await parallaxClient.createTrace(mockRequest);
+
+      expect(result).toEqual(mockResponse);
+      expect(mockApiGatewayClient.CreateTrace).toHaveBeenCalledWith(mockRequest);
+      expect(result.traceId).toBe('trace-456');
+    });
+
+    it('should create a trace with transaction hash hint', async () => {
+      const mockRequest: apiGateway.CreateTraceRequest = {
+        name: 'Bridge Transaction Trace',
+        attributes: {
+          'bridge.name': 'ethereum-polygon'
+        },
+        tags: ['bridge', 'blockchain'],
+        events: [],
+        txHashHint: {
+          chainId: 'ethereum',
+          txHash: '0x123abc456def',
+          details: 'Bridge transaction from Ethereum to Polygon',
+          timestamp: new Date('2024-01-01T00:00:00Z')
+        }
+      };
+
+      const mockResponse: apiGateway.CreateTraceResponse = {
+        status: {
+          code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
+          errorMessage: undefined
+        },
+        traceId: 'trace-789',
+      };
+
+      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+
+      const result = await parallaxClient.createTrace(mockRequest);
+
+      expect(result).toEqual(mockResponse);
+      expect(mockApiGatewayClient.CreateTrace).toHaveBeenCalledWith(mockRequest);
+      expect(result.traceId).toBe('trace-789');
+    });
+
     it('should handle errors when creating a trace', async () => {
       const mockRequest: apiGateway.CreateTraceRequest = {
         name: 'Test Trace',
         attributes: {},
-        tags: ['tag1', 'tag2'],
+        tags: [],
+        events: [],
+        txHashHint: undefined,
       };
 
       const mockError = new Error('gRPC connection failed');
@@ -112,285 +190,309 @@ describe('ParallaxClient', () => {
     });
   });
 
-  describe('startSpan', () => {
-    it('should start a span successfully', async () => {
-      const mockRequest: apiGateway.StartSpanRequest = {
-        name: 'Test Span',
-        traceId: 'trace-123',
-        parentSpanId: 'test-123',
-        attributes: {
-          'span.type': 'http'
-        },
-        startTime: undefined,
-      };
-
-      const mockResponse: apiGateway.StartSpanResponse = {
-        status: { 
-          code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
-          errorMessage: undefined
-        },
-        spanId: 'span-456',
-      };
-
-      mockApiGatewayClient.StartSpan.mockResolvedValue(mockResponse);
-
-      const result = await parallaxClient.startSpan(mockRequest);
-
-      expect(result).toEqual(mockResponse);
-      expect(mockApiGatewayClient.StartSpan).toHaveBeenCalledWith(mockRequest);
-      expect(mockApiGatewayClient.StartSpan).toHaveBeenCalledTimes(1);
+  describe('trace builder (ParallaxTrace)', () => {
+    it('should create a trace builder instance', () => {
+      const trace = parallaxClient.trace('test-trace');
+      expect(trace).toBeInstanceOf(ParallaxTrace);
     });
 
-    it('should handle errors when starting a span', async () => {
-      const mockRequest: apiGateway.StartSpanRequest = {
-        name: 'Test Span',
-        traceId: 'trace-123',
-        parentSpanId: 'test-123',
-        attributes: {},
-      };
-
-      const mockError = new Error('Span creation failed');
-      mockApiGatewayClient.StartSpan.mockRejectedValue(mockError);
-
-      await expect(parallaxClient.startSpan(mockRequest)).rejects.toThrow('Span creation failed');
-      expect(mockConsoleError).toHaveBeenCalledWith(
-        '[ParallaxClient][startSpan] Error:',
-        expect.any(Error)
-      );
-    });
-  });
-
-  describe('finishSpan', () => {
-    it('should finish a span successfully', async () => {
-      const mockRequest: apiGateway.FinishSpanRequest = {
-        traceId: 'trace-123',
-        spanId: 'span-456',
-        endTime: undefined,
-        status: undefined,
-      };
-
-      const mockResponse: apiGateway.FinishSpanResponse = {
-        status: { 
-          code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
-          errorMessage: undefined
-        },
-      };
-
-      mockApiGatewayClient.FinishSpan.mockResolvedValue(mockResponse);
-
-      const result = await parallaxClient.finishSpan(mockRequest);
-
-      expect(result).toEqual(mockResponse);
-      expect(mockApiGatewayClient.FinishSpan).toHaveBeenCalledWith(mockRequest);
-      expect(mockApiGatewayClient.FinishSpan).toHaveBeenCalledTimes(1);
-    });
-
-    it('should handle errors when finishing a span', async () => {
-      const mockRequest: apiGateway.FinishSpanRequest = {
-        traceId: 'trace-123',
-        spanId: 'span-456',
-      };
-
-      const mockError = new Error('Finish span failed');
-      mockApiGatewayClient.FinishSpan.mockRejectedValue(mockError);
-
-      await expect(parallaxClient.finishSpan(mockRequest)).rejects.toThrow('Finish span failed');
-      expect(mockConsoleError).toHaveBeenCalledWith(
-        '[ParallaxClient][finishSpan] Error:',
-        expect.any(Error)
-      );
-    });
-  });
-
-  describe('addSpanEvent', () => {
-    it('should add span event successfully', async () => {
-      const mockRequest: apiGateway.AddSpanEventRequest = {
-        traceId: 'trace-123',
-        spanId: 'span-456',
-        eventName: 'Test Event',
-        attributes: {
-          eventType: 'custom',
-        },
-        timestamp: undefined,
-      };
-
-      const mockResponse: apiGateway.AddSpanEventResponse = {
-        status: { 
-          code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
-          errorMessage: undefined
-        },
-      };
-
-      mockApiGatewayClient.AddSpanEvent.mockResolvedValue(mockResponse);
-
-      const result = await parallaxClient.addSpanEvent(mockRequest);
-
-      expect(result).toEqual(mockResponse);
-      expect(mockApiGatewayClient.AddSpanEvent).toHaveBeenCalledWith(mockRequest);
-      expect(mockApiGatewayClient.AddSpanEvent).toHaveBeenCalledTimes(1);
-    });
-
-    it('should handle errors when adding span event', async () => {
-      const mockRequest: apiGateway.AddSpanEventRequest = {
-        traceId: 'trace-123',
-        spanId: 'span-456',
-        eventName: 'Test Event',
-        attributes: {},
-      };
-
-      const mockError = new Error('Add event failed');
-      mockApiGatewayClient.AddSpanEvent.mockRejectedValue(mockError);
-
-      await expect(parallaxClient.addSpanEvent(mockRequest)).rejects.toThrow('Add event failed');
-      expect(mockConsoleError).toHaveBeenCalledWith(
-        '[ParallaxClient][addSpanEvent] Error:',
-        expect.any(Error)
-      );
-    });
-  });
-
-  describe('addSpanError', () => {
-    it('should add span error successfully', async () => {
-      const mockRequest: apiGateway.AddSpanErrorRequest = {
-        traceId: 'trace-123',
-        spanId: 'span-456',
-        errorType: 'RuntimeError',
-        message: 'Something went wrong',
-        stackTrace: undefined,
-        attributes: {},
-        timestamp: undefined,
-      };
-
-      const mockResponse: apiGateway.AddSpanErrorResponse = {
-        status: { 
-          code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
-          errorMessage: undefined
-        },
-      };
-
-      mockApiGatewayClient.AddSpanError.mockResolvedValue(mockResponse);
-
-      const result = await parallaxClient.addSpanError(mockRequest);
-
-      expect(result).toEqual(mockResponse);
-      expect(mockApiGatewayClient.AddSpanError).toHaveBeenCalledWith(mockRequest);
-      expect(mockApiGatewayClient.AddSpanError).toHaveBeenCalledTimes(1);
-    });
-
-    it('should handle errors when adding span error', async () => {
-      const mockRequest: apiGateway.AddSpanErrorRequest = {
-        traceId: 'trace-123',
-        spanId: 'span-456',
-        errorType: 'Error',
-        message: 'Error message',
-        attributes: {},
-      };
-
-      const mockError = new Error('Add error failed');
-      mockApiGatewayClient.AddSpanError.mockRejectedValue(mockError);
-
-      await expect(parallaxClient.addSpanError(mockRequest)).rejects.toThrow('Add error failed');
-      expect(mockConsoleError).toHaveBeenCalledWith(
-        '[ParallaxClient][addSpanError] Error:',
-        expect.any(Error)
-      );
-    });
-  });
-
-  describe('addSpanHint', () => {
-    it('should add span hint successfully', async () => {
-      const mockRequest: apiGateway.AddSpanHintRequest = {
-        traceId: 'trace-123',
-        parentSpanId: 'span-456',
-        timestamp: undefined,
-        chainTransaction: {
-          txHash: '0x123abc',
-          chainId: 1,
-        },
-      };
-
-      const mockResponse: apiGateway.AddSpanHintResponse = {
-        status: { 
-          code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
-          errorMessage: undefined
-        },
-      };
-
-      mockApiGatewayClient.AddSpanHint.mockResolvedValue(mockResponse);
-
-      const result = await parallaxClient.addSpanHint(mockRequest);
-
-      expect(result).toEqual(mockResponse);
-      expect(mockApiGatewayClient.AddSpanHint).toHaveBeenCalledWith(mockRequest);
-      expect(mockApiGatewayClient.AddSpanHint).toHaveBeenCalledTimes(1);
-    });
-
-    it('should handle errors when adding span hint', async () => {
-      const mockRequest: apiGateway.AddSpanHintRequest = {
-        traceId: 'trace-123',
-        parentSpanId: 'span-456',
-        chainTransaction: undefined,
-      };
-
-      const mockError = new Error('Add hint failed');
-      mockApiGatewayClient.AddSpanHint.mockRejectedValue(mockError);
-
-      await expect(parallaxClient.addSpanHint(mockRequest)).rejects.toThrow('Add hint failed');
-      expect(mockConsoleError).toHaveBeenCalledWith(
-        '[ParallaxClient][addSpanHint] Error:',
-        expect.any(Error)
-      );
-    });
-  });
-
-  describe('integration scenarios', () => {
-    it('should handle multiple method calls in sequence', async () => {
-      const traceRequest: apiGateway.CreateTraceRequest = {
-        name: 'Integration Test',
-        attributes: {
-          'project.id': 'test-project'
-        },
-        tags: ['tag1', 'tag2'],
-      };
-
-      const spanRequest: apiGateway.StartSpanRequest = {
-        name: 'Integration Span',
-        traceId: 'trace-123',
-        parentSpanId: 'span-root',
-        attributes: {},
-      };
-
-      mockApiGatewayClient.CreateTrace.mockResolvedValue({
-        traceId: 'trace-123',
-        rootSpanId: 'span-root',
+    it('should build and submit a simple trace', async () => {
+      const mockResponse: apiGateway.CreateTraceResponse = {
         status: {
           code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
           errorMessage: undefined
-        }
-      });
-      mockApiGatewayClient.StartSpan.mockResolvedValue({ 
-        spanId: 'span-456', 
-        status: { 
-          code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
-          errorMessage: undefined
-        }
-      });
+        },
+        traceId: 'trace-builder-123',
+      };
 
-      await parallaxClient.createTrace(traceRequest);
-      await parallaxClient.startSpan(spanRequest);
+      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
 
-      expect(mockApiGatewayClient.CreateTrace).toHaveBeenCalledTimes(1);
-      expect(mockApiGatewayClient.StartSpan).toHaveBeenCalledTimes(1);
+      const result = await parallaxClient.trace('swap_execution')
+        .addAttribute('user', '0xabc...')
+        .addTag('dex')
+        .submit();
+
+      expect(result.traceId).toBe('trace-builder-123');
+      expect(mockApiGatewayClient.CreateTrace).toHaveBeenCalledWith({
+        name: 'swap_execution',
+        attributes: { user: '0xabc...' },
+        tags: ['dex'],
+        events: [],
+        txHashHint: undefined,
+      });
     });
 
-    it('should create client instances with different API keys', () => {
-      const client1 = new ParallaxClient('key1');
-      const client2 = new ParallaxClient('key2');
-      const client3 = new ParallaxClient();
+    it('should handle multiple attributes with different types', async () => {
+      const mockResponse: apiGateway.CreateTraceResponse = {
+        status: {
+          code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
+          errorMessage: undefined
+        },
+        traceId: 'trace-multi-attr',
+      };
 
-      expect(client1.apiKey).toBe('key1');
-      expect(client2.apiKey).toBe('key2');
-      expect(client3.apiKey).toBeUndefined();
+      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+
+      await parallaxClient.trace('test')
+        .addAttribute('stringValue', 'hello')
+        .addAttribute('numberValue', 42)
+        .addAttribute('booleanValue', true)
+        .submit();
+
+      expect(mockApiGatewayClient.CreateTrace).toHaveBeenCalledWith({
+        name: 'test',
+        attributes: {
+          stringValue: 'hello',
+          numberValue: '42',
+          booleanValue: 'true',
+        },
+        tags: [],
+        events: [],
+        txHashHint: undefined,
+      });
+    });
+
+    it('should handle addAttributes with multiple key-value pairs', async () => {
+      const mockResponse: apiGateway.CreateTraceResponse = {
+        status: {
+          code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
+          errorMessage: undefined
+        },
+        traceId: 'trace-batch-attrs',
+      };
+
+      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+
+      await parallaxClient.trace('test')
+        .addAttributes({
+          user: '0xabc',
+          slippage: 25,
+          isPremium: true,
+        })
+        .submit();
+
+      expect(mockApiGatewayClient.CreateTrace).toHaveBeenCalledWith({
+        name: 'test',
+        attributes: {
+          user: '0xabc',
+          slippage: '25',
+          isPremium: 'true',
+        },
+        tags: [],
+        events: [],
+        txHashHint: undefined,
+      });
+    });
+
+    it('should handle multiple tags', async () => {
+      const mockResponse: apiGateway.CreateTraceResponse = {
+        status: {
+          code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
+          errorMessage: undefined
+        },
+        traceId: 'trace-tags',
+      };
+
+      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+
+      await parallaxClient.trace('test')
+        .addTag('tag1')
+        .addTag('tag2')
+        .addTags(['tag3', 'tag4'])
+        .submit();
+
+      expect(mockApiGatewayClient.CreateTrace).toHaveBeenCalledWith({
+        name: 'test',
+        attributes: {},
+        tags: ['tag1', 'tag2', 'tag3', 'tag4'],
+        events: [],
+        txHashHint: undefined,
+      });
+    });
+
+    it('should handle events with different detail types', async () => {
+      const mockResponse: apiGateway.CreateTraceResponse = {
+        status: {
+          code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
+          errorMessage: undefined
+        },
+        traceId: 'trace-events',
+      };
+
+      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+
+      const timestamp1 = new Date('2024-01-01T00:00:00Z');
+      const timestamp2 = new Date('2024-01-01T00:00:05Z');
+
+      await parallaxClient.trace('test')
+        .addEvent('event1', 'string details', timestamp1)
+        .addEvent('event2', { key: 'value', count: 42 }, timestamp2)
+        .addEvent('event3') // no details, auto timestamp
+        .submit();
+
+      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      expect(calls.events).toHaveLength(3);
+      expect(calls.events[0].eventName).toBe('event1');
+      expect(calls.events[0].details).toBe('string details');
+      expect(calls.events[0].timestamp).toEqual(timestamp1);
+      expect(calls.events[1].eventName).toBe('event2');
+      expect(calls.events[1].details).toBe(JSON.stringify({ key: 'value', count: 42 }));
+      expect(calls.events[2].eventName).toBe('event3');
+      expect(calls.events[2].details).toBeUndefined();
+      expect(calls.events[2].timestamp).toBeInstanceOf(Date);
+    });
+
+    it('should set transaction hash hint via setTxHash', async () => {
+      const mockResponse: apiGateway.CreateTraceResponse = {
+        status: {
+          code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
+          errorMessage: undefined
+        },
+        traceId: 'trace-txhash',
+      };
+
+      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+
+      await parallaxClient.trace('swap')
+        .setTxHash('0x123...', 'ethereum', 'Swap transaction')
+        .submit();
+
+      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      expect(calls.txHashHint).toBeDefined();
+      expect(calls.txHashHint?.txHash).toBe('0x123...');
+      expect(calls.txHashHint?.chainId).toBe('ethereum');
+      expect(calls.txHashHint?.details).toBe('Swap transaction');
+      expect(calls.txHashHint?.timestamp).toBeInstanceOf(Date);
+    });
+
+    it('should override setTxHash when providing txHash to submit', async () => {
+      const mockResponse: apiGateway.CreateTraceResponse = {
+        status: {
+          code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
+          errorMessage: undefined
+        },
+        traceId: 'trace-override',
+      };
+
+      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+
+      await parallaxClient.trace('swap')
+        .setTxHash('0xold...', 'ethereum', 'Old transaction')
+        .submit('0xnew...', 'polygon', 'New transaction');
+
+      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      expect(calls.txHashHint?.txHash).toBe('0xnew...');
+      expect(calls.txHashHint?.chainId).toBe('polygon');
+      expect(calls.txHashHint?.details).toBe('New transaction');
+    });
+
+    it('should submit without txHash when not set', async () => {
+      const mockResponse: apiGateway.CreateTraceResponse = {
+        status: {
+          code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
+          errorMessage: undefined
+        },
+        traceId: 'trace-no-tx',
+      };
+
+      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+
+      await parallaxClient.trace('test')
+        .addTag('no-tx')
+        .submit();
+
+      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      expect(calls.txHashHint).toBeUndefined();
+    });
+
+    it('should build a complex trace with all features', async () => {
+      const mockResponse: apiGateway.CreateTraceResponse = {
+        status: {
+          code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
+          errorMessage: undefined
+        },
+        traceId: 'trace-complex',
+      };
+
+      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+
+      const result = await parallaxClient.trace('swap_execution')
+        .addAttribute('user', '0xabc...')
+        .addAttribute('slippage_bps', 25)
+        .addTag('dex')
+        .addTag('swap')
+        .addEvent('wallet_connected', 'MetaMask connected')
+        .addEvent('quote_received', { amount: 100, token: 'USDC' })
+        .addEvent('tx_signed')
+        .submit('0x123...', 'ethereum');
+
+      expect(result.traceId).toBe('trace-complex');
+
+      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      expect(calls.name).toBe('swap_execution');
+      expect(calls.attributes).toEqual({
+        user: '0xabc...',
+        slippage_bps: '25',
+      });
+      expect(calls.tags).toEqual(['dex', 'swap']);
+      expect(calls.events).toHaveLength(3);
+      expect(calls.txHashHint?.txHash).toBe('0x123...');
+      expect(calls.txHashHint?.chainId).toBe('ethereum');
+    });
+
+    it('should handle errors when submitting trace builder', async () => {
+      const mockError = new Error('Submit failed');
+      mockApiGatewayClient.CreateTrace.mockRejectedValue(mockError);
+
+      await expect(
+        parallaxClient.trace('test')
+          .addTag('error-test')
+          .submit()
+      ).rejects.toThrow('Submit failed');
+
+      expect(mockConsoleError).toHaveBeenCalledWith(
+        '[ParallaxClient][createTrace] Error:',
+        expect.any(Error)
+      );
+    });
+  });
+
+  describe('multiple traces', () => {
+    it('should create multiple independent trace builders', async () => {
+      const mockResponse1: apiGateway.CreateTraceResponse = {
+        status: {
+          code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
+          errorMessage: undefined
+        },
+        traceId: 'trace-1',
+      };
+
+      const mockResponse2: apiGateway.CreateTraceResponse = {
+        status: {
+          code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
+          errorMessage: undefined
+        },
+        traceId: 'trace-2',
+      };
+
+      mockApiGatewayClient.CreateTrace
+        .mockResolvedValueOnce(mockResponse1)
+        .mockResolvedValueOnce(mockResponse2);
+
+      const trace1 = parallaxClient.trace('trace-1')
+        .addAttribute('id', '1')
+        .addTag('first');
+
+      const trace2 = parallaxClient.trace('trace-2')
+        .addAttribute('id', '2')
+        .addTag('second');
+
+      const result1 = await trace1.submit();
+      const result2 = await trace2.submit();
+
+      expect(result1.traceId).toBe('trace-1');
+      expect(result2.traceId).toBe('trace-2');
+      expect(mockApiGatewayClient.CreateTrace).toHaveBeenCalledTimes(2);
     });
   });
 });
