@@ -14,6 +14,7 @@
  *   npm run cli -- interactive                     # Interactive mode with prompts
  */
 
+import 'dotenv/config';
 import { ParallaxClient, ParallaxTrace } from '../src/parallax';
 import * as readline from 'readline';
 

@@ -59,7 +59,10 @@ export class NodeGrpcRpc implements Rpc {
 
       // Add API key to metadata if provided
       if (this.apiKey) {
-        grpcMetadata.add('x-api-key', this.apiKey);
+        console.log(`[gRPC] Adding X-Parallax-Api-Key header with API key: ${this.apiKey?.substring(0, 10)}...`);
+        grpcMetadata.add('x-parallax-api-key', this.apiKey);
+      } else {
+        console.log(`[gRPC] WARNING: No API key provided!`);
       }
 
       const deadline = new Date();
@@ -105,7 +108,7 @@ export class NodeGrpcRpc implements Rpc {
 
       // Add API key to metadata if provided
       if (this.apiKey) {
-        metadata.add('x-api-key', this.apiKey);
+        metadata.add('x-parallax-api-key', this.apiKey);
       }
 
       // Use the reusable client
