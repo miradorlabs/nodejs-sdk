@@ -10,6 +10,8 @@
   "scripts": {
     "prepare": "npm run build",
     "build": "rm -rf dist/ && rollup -c",
+    "lint": "eslint src/ tests/",
+    "lint:fix": "eslint src/ tests/ --fix",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
@@ -55,7 +57,7 @@
   "dependencies": {
     "@grpc/grpc-js": "^1.14.1",
     "google-protobuf": "^4.0.1",
-    "mirador-gateway-parallax": "https://storage.googleapis.com/mirador-shd-packages/gateway/parallax/nodejs/mirador-gateway-parallax-1.0.11.tgz",
+    "mirador-gateway-parallax": "https://storage.googleapis.com/mirador-shd-packages/gateway/parallax/nodejs/mirador-gateway-parallax-1.0.13.tgz",
     "rxjs": "^7.8.2"
   }
 }

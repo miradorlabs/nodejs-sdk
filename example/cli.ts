@@ -8,14 +8,14 @@
  *   npm run cli -- add-attribute <key> <value>     # Add attribute to trace (requires trace name first)
  *   npm run cli -- add-event <name> [details]      # Add event to trace
  *   npm run cli -- add-tag <tag>                   # Add tag to trace
- *   npm run cli -- set-tx <hash> <chainId>         # Set transaction hash
+ *   npm run cli -- set-tx <hash> <chain>           # Set transaction hash (chain: ethereum, polygon, etc.)
  *   npm run cli -- submit                          # Submit the trace
  *   npm run cli -- builder                         # Use the builder pattern demo
  *   npm run cli -- interactive                     # Interactive mode with prompts
  */
 
 import 'dotenv/config';
-import { ParallaxClient, ParallaxTrace } from '../src/parallax';
+import { ParallaxClient, ParallaxTrace, ChainName } from '../src/parallax';
 import * as readline from 'readline';
 
 // Configuration from environment variables
@@ -67,6 +67,16 @@ function logWarning(message: string) {
 // Initialize client
 const client = new ParallaxClient(API_KEY, API_URL);
 
+// Valid chain names (matching ChainName type)
+const VALID_CHAINS: ChainName[] = ['ethereum', 'polygon', 'arbitrum', 'base', 'optimism', 'bsc'];
+
+function validateChainName(chain: string): ChainName {
+  if (!VALID_CHAINS.includes(chain as ChainName)) {
+    throw new Error(`Invalid chain: ${chain}. Valid chains: ${VALID_CHAINS.join(', ')}`);
+  }
+  return chain as ChainName;
+}
+
 // Command: Create a new trace
 function createTrace(traceName: string) {
   if (!traceName) {
@@ -78,7 +88,7 @@ function createTrace(traceName: string) {
   currentTrace = client.trace(traceName);
   currentTraceName = traceName;
   logSuccess(`Trace "${traceName}" created`);
-  logInfo('You can now add attributes, events, tags, or transaction hashes');
+  logInfo('You can now add attributes, events, tags, or transaction hints');
   logInfo('Commands: add-attribute, add-event, add-tag, set-tx, submit');
 }
 
@@ -95,14 +105,22 @@ function addAttribute(key: string, value: string) {
     process.exit(1);
   }
 
-  // Try to parse value as number or boolean
-  let parsedValue: string | number | boolean = value;
+  // Try to parse value as number, boolean, or JSON object
+  let parsedValue: string | number | boolean | object = value;
   if (value === 'true') parsedValue = true;
   else if (value === 'false') parsedValue = false;
   else if (!isNaN(Number(value))) parsedValue = Number(value);
+  else {
+    try {
+      parsedValue = JSON.parse(value);
+    } catch (e) {
+      // Keep as string if not valid JSON
+      // This is expected for plain string values like "hello" or "0xabc123"
+    }
+  }
 
   currentTrace.addAttribute(key, parsedValue);
-  logSuccess(`Added attribute: ${key} = ${parsedValue} (${typeof parsedValue})`);
+  logSuccess(`Added attribute: ${key} = ${typeof parsedValue === 'object' ? JSON.stringify(parsedValue) : parsedValue} (${typeof parsedValue})`);
 }
 
 // Command: Add event
@@ -118,12 +136,12 @@ function addEvent(eventName: string, details?: string) {
     process.exit(1);
   }
 
-  let parsedDetails: any = details;
+  let parsedDetails: string | object | undefined = details;
   if (details) {
     try {
       parsedDetails = JSON.parse(details);
     } catch (e) {
-      // If not valid JSON, treat as string
+      // If not valid JSON, treat as string (expected for plain text details)
       parsedDetails = details;
     }
   }
@@ -149,43 +167,53 @@ function addTag(tag: string) {
   logSuccess(`Added tag: ${tag}`);
 }
 
-// Command: Set transaction hash
-function setTxHash(txHash: string, chainId: string, details?: string) {
+// Command: Set transaction hash hint
+function setTxHint(txHash: string, chain: string, details?: string) {
   if (!currentTrace) {
     logError('No active trace. Create one first with: npm run cli -- create <name>');
     process.exit(1);
   }
 
-  if (!txHash || !chainId) {
-    logError('Both txHash and chainId are required');
-    logInfo('Usage: npm run cli -- set-tx <txHash> <chainId> [details]');
+  if (!txHash || !chain) {
+    logError('Both txHash and chain are required');
+    logInfo(`Usage: npm run cli -- set-tx <txHash> <chain> [details]`);
+    logInfo(`Valid chains: ${VALID_CHAINS.join(', ')}`);
     process.exit(1);
   }
 
-  currentTrace.setTxHash(txHash, chainId, details);
-  logSuccess(`Set transaction hash: ${txHash} on ${chainId}`);
+  try {
+    const validChain = validateChainName(chain);
+    currentTrace.setTxHint(txHash, validChain, details);
+    logSuccess(`Set transaction hint: ${txHash} on ${chain}`);
+  } catch (error) {
+    logError(`${error instanceof Error ? error.message : String(error)}`);
+    process.exit(1);
+  }
 }
 
-// Command: Submit trace
+// Command: Create trace (submit)
 async function submitTrace() {
   if (!currentTrace) {
     logError('No active trace. Create one first with: npm run cli -- create <name>');
     process.exit(1);
   }
 
-  logInfo('Submitting trace...');
+  logInfo('Creating trace...');
 
   try {
-    const response = await currentTrace.submit();
-    logSuccess('Trace submitted successfully!');
-    logInfo(`Trace ID: ${response.traceId}`);
-    logInfo(`Status: ${response.status?.code}`);
+    const traceId = await currentTrace.create();
+    if (traceId) {
+      logSuccess('Trace created successfully!');
+      logInfo(`Trace ID: ${traceId}`);
+    } else {
+      logError('Failed to create trace');
+    }
 
     // Reset current trace
     currentTrace = null;
     currentTraceName = null;
   } catch (error) {
-    logError(`Failed to submit trace: ${error}`);
+    logError(`Failed to create trace: ${error}`);
     throw error;
   }
 }
@@ -208,27 +236,31 @@ ${colors.bright}Available Commands:${colors.reset}
   ${colors.green}attr <key> <value>${colors.reset}                 Add an attribute (alias: attribute)
   ${colors.green}event <name> [details]${colors.reset}             Add an event (details can be JSON)
   ${colors.green}tag <tag>${colors.reset}                          Add a tag
-  ${colors.green}tx <hash> <chainId> [details]${colors.reset}      Set transaction hash (alias: set-tx, settx)
-  ${colors.green}submit${colors.reset}                             Submit the current trace
+  ${colors.green}tx <hash> <chain> [details]${colors.reset}        Set transaction hint (alias: set-tx, settx)
+  ${colors.green}submit${colors.reset}                             Create the trace (alias: create)
   ${colors.green}status${colors.reset}                             Show current trace status
   ${colors.green}help${colors.reset}                               Show this help
   ${colors.green}exit${colors.reset}                               Exit interactive mode (alias: quit)
 
+${colors.bright}Valid Chains:${colors.reset}
+  ${VALID_CHAINS.join(', ')}
+
 ${colors.bright}Tips:${colors.reset}
   - Use quotes for multi-word values: ${colors.yellow}create "my swap trace"${colors.reset}
   - Use quotes for JSON: ${colors.yellow}event test '{"key":"value"}'${colors.reset}
-  - Both single and double quotes work
+  - Attribute values can be JSON objects: ${colors.yellow}attr metadata '{"version":"1.0"}'${colors.reset}
 
 ${colors.bright}Examples:${colors.reset}
   create my_swap_trace
   create "My Complex Trace Name"
   attr user 0xabc123
   attr slippage_bps 25
+  attr config '{"timeout":30}'
   tag swap
   event wallet_connected '{"wallet":"MetaMask"}'
   event "transaction completed" "with success"
   tx 0x123abc ethereum
-  set-tx 0x123abc 1 "Alternative syntax"
+  set-tx 0x123abc polygon "Bridge transaction"
   submit
     `);
   };
@@ -317,7 +349,7 @@ ${colors.bright}Examples:${colors.reset}
         case 'tx':
         case 'set-tx':
         case 'settx':
-          setTxHash(args[0], args[1], args.slice(2).join(' '));
+          setTxHint(args[0], args[1], args.slice(2).join(' '));
           break;
 
         case 'submit':
@@ -357,10 +389,11 @@ async function builderDemo() {
   try {
     logInfo('Building trace with fluent API...');
 
-    const response = await client.trace('swap_execution_demo')
+    const traceId = await client.trace('swap_execution_demo')
       .addAttribute('user', '0xabc123def456')
       .addAttribute('slippage_bps', 25)
       .addAttribute('isPremium', true)
+      .addAttribute('config', { timeout: 30, retries: 3 })
       .addTag('dex')
       .addTag('swap')
       .addTag('demo')
@@ -368,12 +401,17 @@ async function builderDemo() {
       .addEvent('quote_requested', { token_in: 'ETH', token_out: 'USDC', amount: '1.0' })
       .addEvent('quote_received', { price: 2500, slippage: 0.25 })
       .addEvent('tx_signed')
-      .submit();
+      .setTxHint('0xdemo123abc456def', 'ethereum', 'Demo swap transaction')
+      .create();
 
-    logSuccess('Trace created with builder!');
-    logInfo(`Trace ID: ${response.traceId}`);
+    if (traceId) {
+      logSuccess('Trace created with builder!');
+      logInfo(`Trace ID: ${traceId}`);
+    } else {
+      logError('Failed to create trace');
+    }
 
-    return response;
+    return traceId;
   } catch (error) {
     logError(`Failed to create trace with builder: ${error}`);
     throw error;
@@ -402,8 +440,11 @@ ${colors.bright}Build a Trace:${colors.reset}
   ${colors.green}npm run cli -- add-attribute <key> <value>${colors.reset} Add an attribute
   ${colors.green}npm run cli -- add-event <name> [details]${colors.reset}  Add an event
   ${colors.green}npm run cli -- add-tag <tag>${colors.reset}               Add a tag
-  ${colors.green}npm run cli -- set-tx <hash> <chain>${colors.reset}       Set transaction hash
-  ${colors.green}npm run cli -- submit${colors.reset}                      Submit the trace
+  ${colors.green}npm run cli -- set-tx <hash> <chain>${colors.reset}       Set transaction hint
+  ${colors.green}npm run cli -- submit${colors.reset}                      Create the trace
+
+${colors.bright}Valid Chains:${colors.reset}
+  ${VALID_CHAINS.join(', ')}
 
 ${colors.bright}Demos & Modes:${colors.reset}
   ${colors.green}npm run cli -- interactive${colors.reset}                 Interactive mode
@@ -412,7 +453,7 @@ ${colors.bright}Demos & Modes:${colors.reset}
 
 ${colors.bright}Environment Variables:${colors.reset}
   ${colors.cyan}PARALLAX_API_KEY${colors.reset}                Your Parallax API key
-  ${colors.cyan}GRPC_BASE_URL_API${colors.reset}               API URL (default: gateway-parallax-dev.mirador.org:443)
+  ${colors.cyan}GRPC_BASE_URL_API${colors.reset}               API URL (default: parallax-gateway.dev.mirador.org:443)
 
 ${colors.bright}Example Workflow:${colors.reset}
   ${colors.yellow}# Create a trace${colors.reset}
@@ -421,14 +462,15 @@ ${colors.bright}Example Workflow:${colors.reset}
   ${colors.yellow}# Add data to the trace${colors.reset}
   npm run cli -- add-attribute user 0xabc123
   npm run cli -- add-attribute slippage_bps 25
+  npm run cli -- add-attribute config '{"timeout":30}'
   npm run cli -- add-tag swap
   npm run cli -- add-event wallet_connected '{"wallet":"MetaMask"}'
   npm run cli -- add-event quote_received
 
-  ${colors.yellow}# Set transaction hash (optional)${colors.reset}
+  ${colors.yellow}# Set transaction hint (optional)${colors.reset}
   npm run cli -- set-tx 0x123abc ethereum "Swap transaction"
 
-  ${colors.yellow}# Submit the trace${colors.reset}
+  ${colors.yellow}# Create the trace${colors.reset}
   npm run cli -- submit
 
 ${colors.bright}Interactive Mode:${colors.reset}
@@ -436,7 +478,9 @@ ${colors.bright}Interactive Mode:${colors.reset}
   Then use commands like:
     create my_trace
     attr user 0xabc
+    attr config '{"key":"value"}'
     event wallet_connected
+    tx 0x123 ethereum
     submit
   `);
 }
@@ -477,7 +521,7 @@ async function main() {
 
       case 'set-tx':
       case 'tx':
-        setTxHash(args[0], args[1], args.slice(2).join(' '));
+        setTxHint(args[0], args[1], args.slice(2).join(' '));
         break;
 
       case 'submit':

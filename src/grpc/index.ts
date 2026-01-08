@@ -1,10 +1,9 @@
 import * as grpc from "@grpc/grpc-js";
 import { Observable } from "rxjs";
 
-import {
-  deserialize,
-  serialize
-} from "../helpers";
+// Simple pass-through serialization for raw bytes
+const serialize = (value: Buffer): Buffer => value;
+const deserialize = (bytes: Buffer): Buffer => bytes;
 
 interface Rpc {
   request(
