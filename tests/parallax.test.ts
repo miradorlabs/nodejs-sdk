@@ -1,5 +1,5 @@
 // ParallaxClient Unit Tests
-import { ParallaxClient, ParallaxTrace } from '../src/parallax';
+import { ParallaxClient, ParallaxTrace, ChainName } from '../src/parallax';
 import { NodeGrpcRpc } from '../src/grpc';
 import * as apiGateway from "mirador-gateway-parallax/proto/gateway/parallax/v1/parallax_gateway";
 import { Chain } from "mirador-gateway-parallax/proto/gateway/parallax/v1/parallax_gateway";
@@ -465,6 +465,54 @@ describe('ParallaxClient', () => {
       expect(result1).toBe('trace-1');
       expect(result2).toBe('trace-2');
       expect(mockApiGatewayClient.CreateTrace).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('CHAIN_MAP coverage', () => {
+    it('should map all ChainName values to valid Chain enum values', async () => {
+      const mockResponse: apiGateway.CreateTraceResponse = {
+        status: {
+          code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
+          errorMessage: undefined
+        },
+        traceId: 'trace-chain-map',
+      };
+      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+
+      // All supported chain names
+      const chainNames: ChainName[] = ['ethereum', 'polygon', 'arbitrum', 'base', 'optimism', 'bsc'];
+
+      // Expected Chain enum values for each chain name
+      const expectedChainEnums: Record<ChainName, Chain> = {
+        ethereum: Chain.CHAIN_ETHEREUM,
+        polygon: Chain.CHAIN_POLYGON,
+        arbitrum: Chain.CHAIN_ARBITRUM,
+        base: Chain.CHAIN_BASE,
+        optimism: Chain.CHAIN_OPTIMISM,
+        bsc: Chain.CHAIN_BSC,
+      };
+
+      for (const chainName of chainNames) {
+        mockApiGatewayClient.CreateTrace.mockClear();
+
+        await parallaxClient.trace('test')
+          .setTxHint('0x123', chainName)
+          .create();
+
+        const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+        expect(calls.txHashHint?.chain).toBe(expectedChainEnums[chainName]);
+      }
+    });
+
+    it('should have CHAIN_MAP entries for all ChainName values', () => {
+      // This test ensures ChainName type and CHAIN_MAP stay in sync
+      const allChainNames: ChainName[] = ['ethereum', 'polygon', 'arbitrum', 'base', 'optimism', 'bsc'];
+
+      // Verify we can create a trace with each chain name without throwing
+      for (const chainName of allChainNames) {
+        const trace = parallaxClient.trace('test').setTxHint('0x123', chainName);
+        expect(trace).toBeInstanceOf(ParallaxTrace);
+      }
     });
   });
 

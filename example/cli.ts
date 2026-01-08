@@ -113,8 +113,9 @@ function addAttribute(key: string, value: string) {
   else {
     try {
       parsedValue = JSON.parse(value);
-    } catch {
+    } catch (e) {
       // Keep as string if not valid JSON
+      // This is expected for plain string values like "hello" or "0xabc123"
     }
   }
 
@@ -139,8 +140,8 @@ function addEvent(eventName: string, details?: string) {
   if (details) {
     try {
       parsedDetails = JSON.parse(details);
-    } catch {
-      // If not valid JSON, treat as string
+    } catch (e) {
+      // If not valid JSON, treat as string (expected for plain text details)
       parsedDetails = details;
     }
   }
