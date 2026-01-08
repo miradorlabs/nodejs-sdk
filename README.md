@@ -1,279 +1,113 @@
-# Parallax SDK
+# Parallax Node.js SDK
 
-The Parallax SDK is a TypeScript client library for interacting with the Mirador tracing platform. It provides a simple and intuitive API for creating traces, managing spans, and adding observability to your applications.
-
-## Features
-
-- 🚀 **Simple API** - Easy-to-use client for trace creation and span management
-- 📊 **Full Span Control** - Start, finish, and manage spans with complete control
-- 🏷️ **Rich Metadata** - Add attributes, events, errors, and hints to spans
-- 🔌 **gRPC Transport** - Built on top of gRPC for efficient communication
-- 📦 **TypeScript First** - Fully typed for excellent IDE support
-- ⚡ **Async/Await** - Modern promise-based API
+TypeScript client library for the Mirador Parallax tracing platform.
 
 ## Installation
 
 ```bash
-npm install @mirador/parallax
+npm install @miradorlabs/parallax
 ```
 
 ## Quick Start
 
 ```typescript
-import { ParallaxClient } from '@mirador/parallax';
+import { ParallaxClient } from '@miradorlabs/parallax';
 
-// Initialize the client
 const client = new ParallaxClient('your-api-key');
 
-// Create a new trace
-const trace = await client.createTrace({
-  name: 'my-application',
-  // ... additional trace parameters
-});
+const traceId = await client.trace('swap_execution')
+  .addAttribute('user', '0xabc123')
+  .addAttribute('slippage_bps', 25)
+  .addTag('dex')
+  .addEvent('wallet_connected', { wallet: 'MetaMask' })
+  .addEvent('transaction_signed')
+  .setTxHint('0x123...', 'ethereum')
+  .create();
 
-// Start a span
-const span = await client.startSpan({
-  traceId: trace.traceId,
-  name: 'operation-name',
-  // ... additional span parameters
-});
-
-// Add attributes to the span
-await client.addSpanAttributes({
-  traceId: trace.traceId,
-  spanId: span.spanId,
-  attributes: {
-    'user.id': '12345',
-    'operation.type': 'database-query'
-  }
-});
-
-// Finish the span
-await client.finishSpan({
-  traceId: trace.traceId,
-  spanId: span.spanId
-});
+console.log('Trace created:', traceId);
 ```
 
-## API Reference
+## API
 
-### Constructor
+### ParallaxClient
 
 ```typescript
-new ParallaxClient(apiKey?: string)
+const client = new ParallaxClient(apiKey?: string, apiUrl?: string);
 ```
 
-Creates a new instance of the Parallax client.
+Creates a new client instance.
 
-**Parameters:**
+- `apiKey` - API key for authentication
+- `apiUrl` - Gateway URL (default: `parallax-gateway.dev.mirador.org:443`)
 
-- `apiKey` (optional): Your Mirador API key for authentication
+### ParallaxTrace (Builder)
 
-### Methods
+Create a trace builder with `client.trace(name)`, then chain methods:
 
-#### `createTrace(params: CreateTraceRequest)`
-
-Creates a new trace in the Mirador platform.
-
-**Returns:** `Promise<CreateTraceResponse>`
+#### `addAttribute(key, value)`
+Add an attribute. Values can be strings, numbers, booleans, or objects (auto-stringified).
 
 ```typescript
-const trace = await client.createTrace({
-  name: 'my-service',
-  // ... additional parameters
-});
+.addAttribute('user', '0xabc')
+.addAttribute('config', { timeout: 30 })
 ```
 
-#### `startSpan(params: StartSpanRequest)`
-
-Starts a new span within an existing trace.
-
-**Returns:** `Promise<StartSpanResponse>`
+#### `addAttributes(attrs)`
+Add multiple attributes at once.
 
 ```typescript
-const span = await client.startSpan({
-  traceId: 'trace-id',
-  name: 'span-name',
-  parentSpanId: 'parent-span-id', // optional
-  // ... additional parameters
-});
+.addAttributes({ user: '0xabc', slippage: 25 })
 ```
 
-#### `finishSpan(params: FinishSpanRequest)`
-
-Finishes an active span.
-
-**Returns:** `Promise<FinishSpanResponse>`
+#### `addTag(tag)` / `addTags(tags)`
+Add tags to the trace.
 
 ```typescript
-await client.finishSpan({
-  traceId: 'trace-id',
-  spanId: 'span-id'
-});
+.addTag('swap')
+.addTags(['dex', 'ethereum'])
 ```
 
-#### `addSpanAttributes(params: AddSpanAttributesRequest)`
-
-Adds custom attributes to a span for additional context.
-
-**Returns:** `Promise<AddSpanAttributesResponse>`
+#### `addEvent(name, details?, timestamp?)`
+Add a timestamped event. Details can be a string or object.
 
 ```typescript
-await client.addSpanAttributes({
-  traceId: 'trace-id',
-  spanId: 'span-id',
-  attributes: {
-    'http.method': 'GET',
-    'http.status_code': 200,
-    'custom.metadata': 'value'
-  }
-});
+.addEvent('wallet_connected')
+.addEvent('quote_received', { price: 2500 })
 ```
 
-#### `addSpanEvent(params: AddSpanEventRequest)`
-
-Adds a timestamped event to a span.
-
-**Returns:** `Promise<AddSpanEventResponse>`
+#### `setTxHint(txHash, chain, details?)`
+Set blockchain transaction correlation.
 
 ```typescript
-await client.addSpanEvent({
-  traceId: 'trace-id',
-  spanId: 'span-id',
-  name: 'cache.hit',
-  // ... additional event data
-});
+.setTxHint('0x123...', 'ethereum', 'Swap transaction')
 ```
 
-#### `addSpanError(params: AddSpanErrorRequest)`
+Supported chains: `ethereum`, `polygon`, `arbitrum`, `base`, `optimism`, `bsc`
 
-Records an error that occurred during span execution.
-
-**Returns:** `Promise<AddSpanErrorResponse>`
-
-```typescript
-await client.addSpanError({
-  traceId: 'trace-id',
-  spanId: 'span-id',
-  error: 'Error message',
-  // ... additional error details
-});
-```
-
-#### `addSpanHint(params: AddSpanHintRequest)`
-
-Adds hints to a span for debugging and optimization suggestions.
-
-**Returns:** `Promise<AddSpanHintResponse>`
+#### `create()`
+Submit the trace. Returns the trace ID or `undefined` on failure.
 
 ```typescript
-await client.addSpanHint({
-  traceId: 'trace-id',
-  spanId: 'span-id',
-  hint: 'Consider caching this operation',
-  // ... additional hint data
-});
+const traceId = await trace.create();
 ```
 
 ## Configuration
 
 ### Environment Variables
 
-The SDK supports the following environment variable:
-
-- `GRPC_BASE_URL_API` - The gRPC gateway URL (default: `localhost:50053`)
-
-```bash
-export GRPC_BASE_URL_API=api.mirador.example.com:50053
-```
-
-## Advanced Usage
-
-### Error Handling
-
-All methods throw errors that should be caught and handled appropriately:
-
-```typescript
-try {
-  const trace = await client.createTrace({ name: 'my-app' });
-} catch (error) {
-  console.error('Failed to create trace:', error);
-  // Handle error appropriately
-}
-```
-
-### Nested Spans
-
-Create hierarchical span relationships by specifying parent spans:
-
-```typescript
-// Create parent span
-const parentSpan = await client.startSpan({
-  traceId: trace.traceId,
-  name: 'parent-operation'
-});
-
-// Create child span
-const childSpan = await client.startSpan({
-  traceId: trace.traceId,
-  name: 'child-operation',
-  parentSpanId: parentSpan.spanId
-});
-
-// Finish child first
-await client.finishSpan({
-  traceId: trace.traceId,
-  spanId: childSpan.spanId
-});
-
-// Then finish parent
-await client.finishSpan({
-  traceId: trace.traceId,
-  spanId: parentSpan.spanId
-});
-```
+- `PARALLAX_API_KEY` - API key for authentication
+- `GRPC_BASE_URL_API` - Override gateway URL
 
 ## Development
 
-### Building from Source
-
 ```bash
-# Clone the repository
-git clone https://github.com/miradorlabs/mirador-frontend.git
-cd parallax
-
-# Install dependencies
-npm install
-
-# Build the SDK
-npm run build
+npm install          # Install dependencies
+npm run build        # Build
+npm run lint         # Lint
+npm test             # Run tests
+npm run cli          # CLI tool for testing
 ```
-
-### Running Tests
-
-```bash
-npm test
-```
-
-## Dependencies
-
-- **@grpc/grpc-js** - gRPC client for Node.js
-- **google-protobuf** - Protocol Buffers runtime
-- **mirador-gateway-api** - Mirador Gateway API definitions
-- **rxjs** - Reactive Extensions for streaming support
 
 ## License
 
 ISC
-
-## Support
-
-For questions, issues, or feature requests, please open an issue in the GitHub repository or contact the Mirador team.
-
-## Contributing
-
-Contributions are welcome! Please read our contributing guidelines before submitting pull requests.
-
----
-
-Made with ❤️ by the Mirador team
