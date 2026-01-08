@@ -8,4 +8,3 @@ export { ParallaxTrace } from './trace';
 
 // Types
 export type { ChainName, TraceEvent, TxHashHint } from './types';
-export { CHAIN_MAP } from './types';

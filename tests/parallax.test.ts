@@ -1,7 +1,8 @@
 // ParallaxClient Unit Tests
-import { ParallaxClient, ParallaxTrace, CHAIN_MAP } from '../src/parallax';
+import { ParallaxClient, ParallaxTrace } from '../src/parallax';
 import { NodeGrpcRpc } from '../src/grpc';
 import * as apiGateway from "mirador-gateway-parallax/proto/gateway/parallax/v1/parallax_gateway";
+import { Chain } from "mirador-gateway-parallax/proto/gateway/parallax/v1/parallax_gateway";
 import { ResponseStatus_StatusCode } from "mirador-gateway-parallax/proto/common/v1/status";
 
 // Mock the NodeGrpcRpc class
@@ -244,12 +245,12 @@ describe('ParallaxClient', () => {
 
       const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
       expect(calls.events).toHaveLength(3);
-      expect(calls.events[0].eventName).toBe('event1');
+      expect(calls.events[0].name).toBe('event1');
       expect(calls.events[0].details).toBe('string details');
       expect(calls.events[0].timestamp).toEqual(timestamp1);
-      expect(calls.events[1].eventName).toBe('event2');
+      expect(calls.events[1].name).toBe('event2');
       expect(calls.events[1].details).toBe(JSON.stringify({ key: 'value', count: 42 }));
-      expect(calls.events[2].eventName).toBe('event3');
+      expect(calls.events[2].name).toBe('event3');
       expect(calls.events[2].details).toBeUndefined();
       expect(calls.events[2].timestamp).toBeInstanceOf(Date);
     });
@@ -272,7 +273,7 @@ describe('ParallaxClient', () => {
       const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
       expect(calls.txHashHint).toBeDefined();
       expect(calls.txHashHint?.txHash).toBe('0x123...');
-      expect(calls.txHashHint?.chainId).toBe('ethereum'); // Should be 1
+      expect(calls.txHashHint?.chain).toBe(Chain.CHAIN_ETHEREUM);
       expect(calls.txHashHint?.details).toBe('Swap transaction');
       expect(calls.txHashHint?.timestamp).toBeInstanceOf(Date);
     });
@@ -294,7 +295,7 @@ describe('ParallaxClient', () => {
         .create();
 
       let calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
-      expect(calls.txHashHint?.chainId).toBe('polygon'); // 2
+      expect(calls.txHashHint?.chain).toBe(Chain.CHAIN_POLYGON);
 
       // Test arbitrum
       mockApiGatewayClient.CreateTrace.mockClear();
@@ -303,7 +304,7 @@ describe('ParallaxClient', () => {
         .create();
 
       calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
-      expect(calls.txHashHint?.chainId).toBe('arbitrum'); // 3
+      expect(calls.txHashHint?.chain).toBe(Chain.CHAIN_ARBITRUM);
 
       // Test base
       mockApiGatewayClient.CreateTrace.mockClear();
@@ -312,7 +313,7 @@ describe('ParallaxClient', () => {
         .create();
 
       calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
-      expect(calls.txHashHint?.chainId).toBe('base'); // 4
+      expect(calls.txHashHint?.chain).toBe(Chain.CHAIN_BASE);
 
       // Test optimism
       mockApiGatewayClient.CreateTrace.mockClear();
@@ -321,7 +322,7 @@ describe('ParallaxClient', () => {
         .create();
 
       calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
-      expect(calls.txHashHint?.chainId).toBe('optimism'); // 5
+      expect(calls.txHashHint?.chain).toBe(Chain.CHAIN_OPTIMISM);
 
       // Test bsc
       mockApiGatewayClient.CreateTrace.mockClear();
@@ -330,7 +331,7 @@ describe('ParallaxClient', () => {
         .create();
 
       calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
-      expect(calls.txHashHint?.chainId).toBe('bsc'); // 6
+      expect(calls.txHashHint?.chain).toBe(Chain.CHAIN_BSC);
     });
 
     it('should create without txHashHint when not set', async () => {
@@ -387,7 +388,7 @@ describe('ParallaxClient', () => {
       expect(calls.tags).toEqual(['dex', 'swap']);
       expect(calls.events).toHaveLength(3);
       expect(calls.txHashHint?.txHash).toBe('0x123...');
-      expect(calls.txHashHint?.chainId).toBe('ethereum');
+      expect(calls.txHashHint?.chain).toBe(Chain.CHAIN_ETHEREUM);
     });
 
     it('should return undefined when trace creation fails with error status', async () => {
@@ -467,14 +468,4 @@ describe('ParallaxClient', () => {
     });
   });
 
-  describe('CHAIN_MAP', () => {
-    it('should have correct enum values for all chains', () => {
-      expect(CHAIN_MAP['ethereum']).toBe(1);
-      expect(CHAIN_MAP['polygon']).toBe(2);
-      expect(CHAIN_MAP['arbitrum']).toBe(3);
-      expect(CHAIN_MAP['base']).toBe(4);
-      expect(CHAIN_MAP['optimism']).toBe(5);
-      expect(CHAIN_MAP['bsc']).toBe(6);
-    });
-  });
 });

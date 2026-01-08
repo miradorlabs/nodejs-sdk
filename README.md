@@ -1,12 +1,19 @@
 # Parallax Node.js SDK
 
-TypeScript client library for the Mirador Parallax tracing platform.
+Node.js SDK for the Parallax tracing platform. This package provides a server-side client using gRPC to interact with the Parallax Gateway API.
 
 ## Installation
 
 ```bash
 npm install @miradorlabs/parallax
 ```
+
+## Features
+
+- **Fluent Builder Pattern** - Method chaining for creating traces
+- **Blockchain Integration** - Built-in support for correlating traces with blockchain transactions
+- **TypeScript Support** - Full type definitions included
+- **Single Request** - All trace data submitted in one efficient gRPC call
 
 ## Quick Start
 
@@ -15,97 +22,189 @@ import { ParallaxClient } from '@miradorlabs/parallax';
 
 const client = new ParallaxClient('your-api-key');
 
-const traceId = await client.trace('swap_execution')
-  .addAttribute('user', '0xabc123')
-  .addAttribute('slippage_bps', 25)
-  .addTag('dex')
-  .addEvent('wallet_connected', { wallet: 'MetaMask' })
+const traceId = await client.trace('SwapExecution')
+  .addAttribute('from', '0xabc...')
+  .addAttribute('slippage', { bps: 50, tolerance: 'auto' })  // objects are stringified
+  .addTags(['dex', 'swap'])
+  .addEvent('quote_received', { provider: 'Uniswap' })
   .addEvent('transaction_signed')
-  .setTxHint('0x123...', 'ethereum')
+  .setTxHint('0xtxhash...', 'ethereum')  // optional
   .create();
 
-console.log('Trace created:', traceId);
+console.log('Trace ID:', traceId);
 ```
 
-## API
+## API Reference
 
 ### ParallaxClient
 
+The main client for interacting with the Parallax Gateway.
+
+#### Constructor
+
 ```typescript
-const client = new ParallaxClient(apiKey?: string, apiUrl?: string);
+new ParallaxClient(apiKey?: string, apiUrl?: string)
 ```
 
-Creates a new client instance.
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `apiKey` | `string` | No | API key for authentication (sent as `x-parallax-api-key` header) |
+| `apiUrl` | `string` | No | Gateway URL (defaults to `parallax-gateway.dev.mirador.org:443`) |
 
-- `apiKey` - API key for authentication
-- `apiUrl` - Gateway URL (default: `parallax-gateway.dev.mirador.org:443`)
+#### Methods
+
+##### `trace(name?)`
+
+Creates a new trace builder.
+
+```typescript
+const trace = client.trace('MyTrace');
+const trace = client.trace();  // name is optional (defaults to empty string)
+```
+
+Returns: `ParallaxTrace` builder instance
 
 ### ParallaxTrace (Builder)
 
-Create a trace builder with `client.trace(name)`, then chain methods:
+Fluent builder for constructing traces. All methods return `this` for chaining.
 
 #### `addAttribute(key, value)`
-Add an attribute. Values can be strings, numbers, booleans, or objects (auto-stringified).
+
+Add a single attribute. Objects are automatically stringified.
 
 ```typescript
-.addAttribute('user', '0xabc')
-.addAttribute('config', { timeout: 30 })
+trace.addAttribute('user', '0xabc...')
+     .addAttribute('amount', 1.5)
+     .addAttribute('config', { slippage: 50, deadline: 300 })  // stringified to JSON
 ```
 
 #### `addAttributes(attrs)`
-Add multiple attributes at once.
+
+Add multiple attributes at once. Objects are automatically stringified.
 
 ```typescript
-.addAttributes({ user: '0xabc', slippage: 25 })
+trace.addAttributes({
+  from: '0xabc...',
+  to: '0xdef...',
+  value: 1.0,
+  metadata: { source: 'api', version: '1.0' }  // stringified to JSON
+})
 ```
 
 #### `addTag(tag)` / `addTags(tags)`
-Add tags to the trace.
+
+Add tags to categorize the trace.
 
 ```typescript
-.addTag('swap')
-.addTags(['dex', 'ethereum'])
+trace.addTag('transaction')
+     .addTags(['ethereum', 'send'])
 ```
 
 #### `addEvent(name, details?, timestamp?)`
-Add a timestamped event. Details can be a string or object.
+
+Add an event with optional details (string or object) and optional timestamp.
 
 ```typescript
-.addEvent('wallet_connected')
-.addEvent('quote_received', { price: 2500 })
+trace.addEvent('wallet_connected', { wallet: 'MetaMask' })
+     .addEvent('transaction_initiated')
+     .addEvent('transaction_confirmed', { blockNumber: 12345 })
 ```
 
 #### `setTxHint(txHash, chain, details?)`
-Set blockchain transaction correlation.
+
+Set the transaction hash hint for blockchain correlation.
 
 ```typescript
-.setTxHint('0x123...', 'ethereum', 'Swap transaction')
+trace.setTxHint('0x123...', 'ethereum', 'Main transaction')
 ```
 
-Supported chains: `ethereum`, `polygon`, `arbitrum`, `base`, `optimism`, `bsc`
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `txHash` | `string` | Transaction hash |
+| `chain` | `ChainName` | Chain name: `'ethereum'` \| `'polygon'` \| `'arbitrum'` \| `'base'` \| `'optimism'` \| `'bsc'` |
+| `details` | `string` | Optional details about the transaction |
 
 #### `create()`
-Submit the trace. Returns the trace ID or `undefined` on failure.
+
+Submit the trace to the gateway.
 
 ```typescript
 const traceId = await trace.create();
+```
+
+Returns: `Promise<string | undefined>` - The trace ID if successful, undefined if failed
+
+## Complete Example
+
+```typescript
+import { ParallaxClient } from '@miradorlabs/parallax';
+
+const client = new ParallaxClient(process.env.PARALLAX_API_KEY);
+
+async function trackSwapExecution(userAddress: string, txHash: string) {
+  const traceId = await client.trace('SwapExecution')
+    .addAttribute('user', userAddress)
+    .addAttribute('protocol', 'uniswap-v3')
+    .addAttribute('tokenIn', 'ETH')
+    .addAttribute('tokenOut', 'USDC')
+    .addAttribute('amountIn', '1.0')
+    .addAttributes({
+      slippageBps: 50,
+      deadline: Math.floor(Date.now() / 1000) + 300,
+    })
+    .addTags(['swap', 'dex', 'ethereum'])
+    .addEvent('quote_requested')
+    .addEvent('quote_received', { price: 2500.50, provider: 'Uniswap' })
+    .addEvent('transaction_signed')
+    .addEvent('transaction_confirmed', { blockNumber: 12345678 })
+    .setTxHint(txHash, 'ethereum', 'Swap transaction')
+    .create();
+
+  if (traceId) {
+    console.log('Trace created:', traceId);
+  }
+}
 ```
 
 ## Configuration
 
 ### Environment Variables
 
-- `PARALLAX_API_KEY` - API key for authentication
-- `GRPC_BASE_URL_API` - Override gateway URL
+| Variable | Description |
+|----------|-------------|
+| `PARALLAX_API_KEY` | API key for authentication |
+| `GRPC_BASE_URL_API` | Override gateway URL |
+
+## TypeScript Support
+
+Full TypeScript support with exported types:
+
+```typescript
+import {
+  ParallaxClient,
+  ParallaxTrace,
+  ChainName,  // 'ethereum' | 'polygon' | 'arbitrum' | 'base' | 'optimism' | 'bsc'
+} from '@miradorlabs/parallax';
+```
 
 ## Development
 
 ```bash
 npm install          # Install dependencies
-npm run build        # Build
-npm run lint         # Lint
+npm run build        # Build the SDK
+npm run lint         # Run linter
 npm test             # Run tests
+npm run test:watch   # Run tests in watch mode
+npm run test:coverage # Run tests with coverage
 npm run cli          # CLI tool for testing
+```
+
+### Release
+
+```bash
+npm run release:patch  # 1.0.x
+npm run release:minor  # 1.x.0
+npm run release:major  # x.0.0
 ```
 
 ## License

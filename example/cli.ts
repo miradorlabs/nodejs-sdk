@@ -15,7 +15,7 @@
  */
 
 import 'dotenv/config';
-import { ParallaxClient, ParallaxTrace, ChainName, CHAIN_MAP } from '../src/parallax';
+import { ParallaxClient, ParallaxTrace, ChainName } from '../src/parallax';
 import * as readline from 'readline';
 
 // Configuration from environment variables
@@ -67,8 +67,8 @@ function logWarning(message: string) {
 // Initialize client
 const client = new ParallaxClient(API_KEY, API_URL);
 
-// Valid chain names
-const VALID_CHAINS = Object.keys(CHAIN_MAP) as ChainName[];
+// Valid chain names (matching ChainName type)
+const VALID_CHAINS: ChainName[] = ['ethereum', 'polygon', 'arbitrum', 'base', 'optimism', 'bsc'];
 
 function validateChainName(chain: string): ChainName {
   if (!VALID_CHAINS.includes(chain as ChainName)) {

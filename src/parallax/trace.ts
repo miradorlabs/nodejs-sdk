@@ -2,8 +2,21 @@
  * ParallaxTrace builder class for constructing traces with method chaining
  */
 import type { CreateTraceRequest, CreateTraceResponse } from 'mirador-gateway-parallax/proto/gateway/parallax/v1/parallax_gateway';
+import { Chain } from 'mirador-gateway-parallax/proto/gateway/parallax/v1/parallax_gateway';
 import { ResponseStatus_StatusCode } from 'mirador-gateway-parallax/proto/common/v1/status';
 import type { ChainName, TraceEvent, TxHashHint } from './types';
+
+/**
+ * Maps chain names to proto Chain enum values
+ */
+const CHAIN_MAP: Record<ChainName, Chain> = {
+  ethereum: Chain.CHAIN_ETHEREUM,
+  polygon: Chain.CHAIN_POLYGON,
+  arbitrum: Chain.CHAIN_ARBITRUM,
+  base: Chain.CHAIN_BASE,
+  optimism: Chain.CHAIN_OPTIMISM,
+  bsc: Chain.CHAIN_BSC,
+};
 
 /**
  * Interface for the client that ParallaxTrace uses to submit traces
@@ -126,13 +139,13 @@ export class ParallaxTrace {
       attributes: this.attributes,
       tags: this.tags,
       events: this.events.map((e) => ({
-        eventName: e.eventName,
+        name: e.eventName,
         details: e.details,
         timestamp: e.timestamp,
       })),
       txHashHint: this.txHashHint
         ? {
-            chainId: this.txHashHint.chain,
+            chain: CHAIN_MAP[this.txHashHint.chain],
             txHash: this.txHashHint.txHash,
             details: this.txHashHint.details,
             timestamp: this.txHashHint.timestamp,

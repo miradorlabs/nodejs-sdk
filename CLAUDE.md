@@ -16,7 +16,7 @@ npm test             # Run Jest tests
 npm run test:watch   # Run tests in watch mode
 npm run test:coverage # Run tests with coverage
 npm run cli          # Run CLI tool for testing (requires PARALLAX_API_KEY env var)
-./scripts/build.sh   # Full build pipeline: lint → test → build
+./scripts/build.sh   # Full build pipeline: lint -> test -> build
 ./scripts/release.sh # Interactive release workflow
 ```
 
@@ -27,22 +27,30 @@ npm run cli          # Run CLI tool for testing (requires PARALLAX_API_KEY env v
 
 ### Source Structure (`src/parallax/`)
 - `client.ts` - `ParallaxClient` class for creating traces via gRPC
-- `trace.ts` - `ParallaxTrace` builder class for fluent API trace construction
-- `types.ts` - Type definitions (`ChainName`, `TraceEvent`, `TxHashHint`, `CHAIN_MAP`)
+- `trace.ts` - `ParallaxTrace` builder class for fluent API trace construction (includes internal `CHAIN_MAP` for converting chain names to proto enum values)
+- `types.ts` - Type definitions (`ChainName`, `TraceEvent`, `TxHashHint`)
 - `index.ts` - Re-exports all public APIs
 
 ### gRPC Transport (`src/grpc/`)
 - `index.ts` - `NodeGrpcRpc` class implementing gRPC transport with SSL and API key auth
+
+### Proto Types
+The SDK uses types from `mirador-gateway-parallax`:
+- `CreateTraceRequest` / `CreateTraceResponse` - Main request/response types
+- `Event` - Event with `name`, `details`, and `timestamp` fields
+- `TxHashHint` - Transaction hint with `chain` (Chain enum), `txHash`, `details`, and `timestamp`
+- `Chain` - Enum for supported blockchains (CHAIN_ETHEREUM, CHAIN_POLYGON, etc.)
 
 ### Key Patterns
 - Builder pattern: `client.trace(name).addAttribute(...).addTag(...).addEvent(...).setTxHint(...).create()`
 - All attribute values are converted to strings (objects are JSON.stringify'd)
 - Events accept optional details (string or object that gets JSON.stringify'd) and optional timestamps
 - Transaction hash hints are set via `setTxHint(txHash, chain, details?)` with typed `ChainName`
+- Chain names (`'ethereum'`, `'polygon'`, etc.) are internally mapped to proto `Chain` enum values
 - Terminal method `create()` returns `Promise<string | undefined>` (trace ID or undefined on failure)
 
 ### External Dependencies
-- `mirador-gateway-parallax` - Protocol buffer definitions for the Parallax Gateway API (installed from GCS tarball)
+- `mirador-gateway-parallax` - Protocol buffer definitions for the Parallax Gateway API
 - `@grpc/grpc-js` - gRPC client implementation
 - `rxjs` - Used for streaming support in gRPC layer
 
