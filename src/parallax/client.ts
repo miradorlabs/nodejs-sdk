@@ -6,7 +6,7 @@ import { ParallaxGatewayServiceClientImpl } from 'mirador-gateway-parallax/proto
 import { NodeGrpcRpc } from '../grpc';
 import { ParallaxTrace } from './trace';
 
-const DEFAULT_API_URL = 'parallax-gateway.dev.mirador.org:443';
+const DEFAULT_API_URL = 'parallax-gateway-dev.mirador.org:443';
 
 /**
  * Main client for interacting with the Parallax Gateway API
@@ -19,7 +19,7 @@ export class ParallaxClient {
   /**
    * Create a new ParallaxClient instance
    * @param apiKey API key for authentication (sent as x-parallax-api-key header)
-   * @param apiUrl Optional gateway URL (defaults to parallax-gateway.dev.mirador.org:443)
+   * @param apiUrl Optional gateway URL (defaults to parallax-gateway-dev.mirador.org:443)
    */
   constructor(apiKey?: string, apiUrl?: string) {
     this.apiKey = apiKey;

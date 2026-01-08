@@ -57,7 +57,7 @@ describe('ParallaxClient', () => {
     it('should initialize NodeGrpcRpc with the correct URL and API key', () => {
       const apiKey = 'test-key';
       new ParallaxClient(apiKey);
-      expect(NodeGrpcRpc).toHaveBeenCalledWith('parallax-gateway.dev.mirador.org:443', apiKey);
+      expect(NodeGrpcRpc).toHaveBeenCalledWith('parallax-gateway-dev.mirador.org:443', apiKey);
     });
 
     it('should use custom API URL if provided', () => {

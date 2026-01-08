@@ -20,7 +20,7 @@ import * as readline from 'readline';
 
 // Configuration from environment variables
 const API_KEY = process.env.PARALLAX_API_KEY;
-const API_URL = process.env.GRPC_BASE_URL_API || 'parallax-gateway.dev.mirador.org:443';
+const API_URL = process.env.GRPC_BASE_URL_API || 'parallax-gateway-dev.mirador.org:443';
 
 // In-memory trace builder for command mode
 let currentTrace: ParallaxTrace | null = null;
@@ -453,7 +453,7 @@ ${colors.bright}Demos & Modes:${colors.reset}
 
 ${colors.bright}Environment Variables:${colors.reset}
   ${colors.cyan}PARALLAX_API_KEY${colors.reset}                Your Parallax API key
-  ${colors.cyan}GRPC_BASE_URL_API${colors.reset}               API URL (default: parallax-gateway.dev.mirador.org:443)
+  ${colors.cyan}GRPC_BASE_URL_API${colors.reset}               API URL (default: parallax-gateway-dev.mirador.org:443)
 
 ${colors.bright}Example Workflow:${colors.reset}
   ${colors.yellow}# Create a trace${colors.reset}

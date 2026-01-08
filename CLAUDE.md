@@ -55,7 +55,7 @@ The SDK uses types from `mirador-gateway-parallax`:
 - `rxjs` - Used for streaming support in gRPC layer
 
 ### Configuration
-- Default API URL: `parallax-gateway.dev.mirador.org:443`
+- Default API URL: `parallax-gateway-dev.mirador.org:443`
 - Environment variables:
   - `PARALLAX_API_KEY` - API key for authentication
   - `GRPC_BASE_URL_API` - Override default gateway URL

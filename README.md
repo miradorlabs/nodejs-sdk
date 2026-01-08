@@ -49,7 +49,7 @@ new ParallaxClient(apiKey?: string, apiUrl?: string)
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `apiKey` | `string` | No | API key for authentication (sent as `x-parallax-api-key` header) |
-| `apiUrl` | `string` | No | Gateway URL (defaults to `parallax-gateway.dev.mirador.org:443`) |
+| `apiUrl` | `string` | No | Gateway URL (defaults to `parallax-gateway-dev.mirador.org:443`) |
 
 #### Methods
 
