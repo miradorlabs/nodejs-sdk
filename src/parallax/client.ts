@@ -1,12 +1,24 @@
 /**
  * ParallaxClient - Main client for interacting with the Parallax Gateway
  */
-import type { CreateTraceRequest, CreateTraceResponse } from 'mirador-gateway-parallax/proto/gateway/parallax/v1/parallax_gateway';
+import type {
+  CreateTraceRequest,
+  CreateTraceResponse,
+  UpdateTraceRequest,
+  UpdateTraceResponse,
+  KeepAliveRequest,
+  KeepAliveResponse,
+  CloseTraceRequest,
+  CloseTraceResponse,
+} from 'mirador-gateway-parallax/proto/gateway/parallax/v1/parallax_gateway';
 import { ParallaxGatewayServiceClientImpl } from 'mirador-gateway-parallax/proto/gateway/parallax/v1/parallax_gateway';
 import { NodeGrpcRpc } from '../grpc';
 import { ParallaxTrace } from './trace';
+import type { ParallaxClientOptions } from './types';
 
+// Default configuration values
 const DEFAULT_API_URL = 'parallax-gateway-dev.mirador.org:443';
+const DEFAULT_KEEP_ALIVE_INTERVAL_MS = 10000;
 
 /**
  * Main client for interacting with the Parallax Gateway API
@@ -14,16 +26,18 @@ const DEFAULT_API_URL = 'parallax-gateway-dev.mirador.org:443';
 export class ParallaxClient {
   public apiUrl: string;
   public apiKey?: string;
+  public keepAliveIntervalMs: number;
   private rpc: NodeGrpcRpc;
 
   /**
    * Create a new ParallaxClient instance
    * @param apiKey API key for authentication (sent as x-parallax-api-key header)
-   * @param apiUrl Optional gateway URL (defaults to parallax-gateway-dev.mirador.org:443)
+   * @param options Optional configuration options
    */
-  constructor(apiKey?: string, apiUrl?: string) {
+  constructor(apiKey?: string, options?: ParallaxClientOptions) {
     this.apiKey = apiKey;
-    this.apiUrl = apiUrl || DEFAULT_API_URL;
+    this.apiUrl = options?.apiUrl || DEFAULT_API_URL;
+    this.keepAliveIntervalMs = options?.keepAliveIntervalMs || DEFAULT_KEEP_ALIVE_INTERVAL_MS;
     this.rpc = new NodeGrpcRpc(this.apiUrl, apiKey);
   }
 
@@ -34,6 +48,33 @@ export class ParallaxClient {
   async _sendTrace(request: CreateTraceRequest): Promise<CreateTraceResponse> {
     const client = new ParallaxGatewayServiceClientImpl(this.rpc);
     return await client.CreateTrace(request);
+  }
+
+  /**
+   * Internal method to update an existing trace
+   * @internal
+   */
+  async _updateTrace(request: UpdateTraceRequest): Promise<UpdateTraceResponse> {
+    const client = new ParallaxGatewayServiceClientImpl(this.rpc);
+    return await client.UpdateTrace(request);
+  }
+
+  /**
+   * Internal method to send keep-alive ping
+   * @internal
+   */
+  async _keepAlive(request: KeepAliveRequest): Promise<KeepAliveResponse> {
+    const client = new ParallaxGatewayServiceClientImpl(this.rpc);
+    return await client.KeepAlive(request);
+  }
+
+  /**
+   * Internal method to close a trace
+   * @internal
+   */
+  async _closeTrace(request: CloseTraceRequest): Promise<CloseTraceResponse> {
+    const client = new ParallaxGatewayServiceClientImpl(this.rpc);
+    return await client.CloseTrace(request);
   }
 
   /**

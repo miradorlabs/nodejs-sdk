@@ -1,7 +1,16 @@
 /**
  * ParallaxTrace builder class for constructing traces with method chaining
  */
-import type { CreateTraceRequest, CreateTraceResponse } from 'mirador-gateway-parallax/proto/gateway/parallax/v1/parallax_gateway';
+import type {
+  CreateTraceRequest,
+  CreateTraceResponse,
+  UpdateTraceRequest,
+  UpdateTraceResponse,
+  KeepAliveRequest,
+  KeepAliveResponse,
+  CloseTraceRequest,
+  CloseTraceResponse,
+} from 'mirador-gateway-parallax/proto/gateway/parallax/v1/parallax_gateway';
 import { Chain } from 'mirador-gateway-parallax/proto/gateway/parallax/v1/parallax_gateway';
 import { ResponseStatus_StatusCode } from 'mirador-gateway-parallax/proto/common/v1/status';
 import type { ChainName, TraceEvent, TxHashHint } from './types';
@@ -23,7 +32,11 @@ const CHAIN_MAP: Record<ChainName, Chain> = {
  * @internal
  */
 export interface TraceSubmitter {
+  keepAliveIntervalMs: number;
   _sendTrace(request: CreateTraceRequest): Promise<CreateTraceResponse>;
+  _updateTrace(request: UpdateTraceRequest): Promise<UpdateTraceResponse>;
+  _keepAlive(request: KeepAliveRequest): Promise<KeepAliveResponse>;
+  _closeTrace(request: CloseTraceRequest): Promise<CloseTraceResponse>;
 }
 
 /**
@@ -34,12 +47,17 @@ export class ParallaxTrace {
   private attributes: { [key: string]: string } = {};
   private tags: string[] = [];
   private events: TraceEvent[] = [];
-  private txHashHint?: TxHashHint;
+  private txHashHints: TxHashHint[] = [];
   private client: TraceSubmitter;
+  private traceId: string | null = null;
+  private keepAliveTimer: NodeJS.Timeout | null = null;
+  private keepAliveIntervalMs: number;
+  private closed: boolean = false;
 
   constructor(client: TraceSubmitter, name: string = '') {
     this.client = client;
     this.name = name;
+    this.keepAliveIntervalMs = client.keepAliveIntervalMs;
   }
 
   /**
@@ -49,6 +67,10 @@ export class ParallaxTrace {
    * @returns This trace builder for chaining
    */
   addAttribute(key: string, value: string | number | boolean | object): this {
+    if (this.closed) {
+      console.warn('[ParallaxTrace] Trace is closed, ignoring addAttribute');
+      return this;
+    }
     this.attributes[key] =
       typeof value === 'object' && value !== null
         ? JSON.stringify(value)
@@ -62,6 +84,10 @@ export class ParallaxTrace {
    * @returns This trace builder for chaining
    */
   addAttributes(attributes: { [key: string]: string | number | boolean | object }): this {
+    if (this.closed) {
+      console.warn('[ParallaxTrace] Trace is closed, ignoring addAttributes');
+      return this;
+    }
     for (const [key, value] of Object.entries(attributes)) {
       this.attributes[key] =
         typeof value === 'object' && value !== null
@@ -77,6 +103,10 @@ export class ParallaxTrace {
    * @returns This trace builder for chaining
    */
   addTag(tag: string): this {
+    if (this.closed) {
+      console.warn('[ParallaxTrace] Trace is closed, ignoring addTag');
+      return this;
+    }
     this.tags.push(tag);
     return this;
   }
@@ -87,6 +117,10 @@ export class ParallaxTrace {
    * @returns This trace builder for chaining
    */
   addTags(tags: string[]): this {
+    if (this.closed) {
+      console.warn('[ParallaxTrace] Trace is closed, ignoring addTags');
+      return this;
+    }
     this.tags.push(...tags);
     return this;
   }
@@ -99,6 +133,10 @@ export class ParallaxTrace {
    * @returns This trace builder for chaining
    */
   addEvent(eventName: string, details?: string | object, timestamp?: Date): this {
+    if (this.closed) {
+      console.warn('[ParallaxTrace] Trace is closed, ignoring addEvent');
+      return this;
+    }
     const detailsString =
       typeof details === 'object' && details !== null
         ? JSON.stringify(details)
@@ -113,19 +151,23 @@ export class ParallaxTrace {
   }
 
   /**
-   * Set the transaction hash hint for blockchain correlation
+   * Add a transaction hash hint for blockchain correlation
    * @param txHash Transaction hash
    * @param chain Chain name (e.g., "ethereum", "polygon", "base")
    * @param details Optional details about the transaction
    * @returns This trace builder for chaining
    */
-  setTxHint(txHash: string, chain: ChainName, details?: string): this {
-    this.txHashHint = {
+  addTxHint(txHash: string, chain: ChainName, details?: string): this {
+    if (this.closed) {
+      console.warn('[ParallaxTrace] Trace is closed, ignoring addTxHint');
+      return this;
+    }
+    this.txHashHints.push({
       txHash,
       chain,
       details,
       timestamp: new Date(),
-    };
+    });
     return this;
   }
 
@@ -134,23 +176,33 @@ export class ParallaxTrace {
    * @returns The trace ID if successful, undefined if failed
    */
   async create(): Promise<string | undefined> {
+    if (this.closed) {
+      console.warn('[ParallaxTrace] Trace is closed, cannot create');
+      return undefined;
+    }
+
     const request: CreateTraceRequest = {
       name: this.name,
-      attributes: this.attributes,
-      tags: this.tags,
-      events: this.events.map((e) => ({
-        name: e.eventName,
-        details: e.details,
-        timestamp: e.timestamp,
-      })),
-      txHashHint: this.txHashHint
-        ? {
-            chain: CHAIN_MAP[this.txHashHint.chain],
-            txHash: this.txHashHint.txHash,
-            details: this.txHashHint.details,
-            timestamp: this.txHashHint.timestamp,
-          }
-        : undefined,
+      data: {
+        attributes: Object.keys(this.attributes).length > 0
+          ? [{ attributes: this.attributes, timestamp: new Date() }]
+          : [],
+        tags: this.tags.length > 0
+          ? [{ tags: this.tags, timestamp: new Date() }]
+          : [],
+        events: this.events.map((e) => ({
+          name: e.eventName,
+          details: e.details,
+          timestamp: e.timestamp,
+        })),
+        txHashHints: this.txHashHints.map((hint) => ({
+          chain: CHAIN_MAP[hint.chain],
+          txHash: hint.txHash,
+          details: hint.details,
+          timestamp: hint.timestamp,
+        })),
+      },
+      sendClientTimestamp: new Date(),
     };
 
     try {
@@ -161,10 +213,113 @@ export class ParallaxTrace {
         return undefined;
       }
 
+      this.traceId = response.traceId || null;
+
+      // Start keep-alive timer after successful trace creation
+      if (this.traceId) {
+        this.startKeepAlive();
+      }
+
       return response.traceId;
     } catch (error) {
       console.log('[ParallaxTrace] Error creating trace:', error);
       return undefined;
+    }
+  }
+
+  /**
+   * Get the trace ID (available after create() completes successfully)
+   * @returns The trace ID or null if not yet created
+   */
+  getTraceId(): string | null {
+    return this.traceId;
+  }
+
+  /**
+   * Check if the trace has been closed
+   * @returns True if the trace is closed
+   */
+  isClosed(): boolean {
+    return this.closed;
+  }
+
+  /**
+   * Start the keep-alive timer
+   * @private
+   */
+  private startKeepAlive(): void {
+    if (this.keepAliveTimer || !this.traceId || this.closed) {
+      return;
+    }
+
+    this.keepAliveTimer = setInterval(() => {
+      this.sendKeepAlive();
+    }, this.keepAliveIntervalMs);
+  }
+
+  /**
+   * Stop the keep-alive timer
+   * @private
+   */
+  private stopKeepAlive(): void {
+    if (this.keepAliveTimer) {
+      clearInterval(this.keepAliveTimer);
+      this.keepAliveTimer = null;
+    }
+  }
+
+  /**
+   * Send a keep-alive ping to the server
+   * @private
+   */
+  private async sendKeepAlive(): Promise<void> {
+    if (!this.traceId || this.closed) {
+      return;
+    }
+
+    try {
+      const request: KeepAliveRequest = {
+        traceId: this.traceId,
+      };
+
+      const response = await this.client._keepAlive(request);
+
+      if (!response.accepted) {
+        console.log('[ParallaxTrace] Keep-alive not accepted for trace:', this.traceId);
+        this.stopKeepAlive();
+      }
+    } catch (error) {
+      console.log('[ParallaxTrace] Error sending keep-alive:', error);
+    }
+  }
+
+  /**
+   * Close the trace and stop all timers
+   * @param reason Optional reason for closing the trace
+   */
+  async close(reason?: string): Promise<void> {
+    if (this.closed) {
+      return;
+    }
+
+    this.closed = true;
+    this.stopKeepAlive();
+
+    if (this.traceId) {
+      try {
+        const request: CloseTraceRequest = {
+          traceId: this.traceId,
+          text: reason,
+        };
+
+        const response = await this.client._closeTrace(request);
+
+        if (!response.accepted) {
+          console.log('[ParallaxTrace] Close request not accepted for trace:', this.traceId);
+        }
+      } catch (error) {
+        console.log('[ParallaxTrace] Error closing trace:', error);
+      }
     }
   }
 }

@@ -7,4 +7,4 @@ export { ParallaxClient } from './client';
 export { ParallaxTrace } from './trace';
 
 // Types
-export type { ChainName, TraceEvent, TxHashHint } from './types';
+export type { ParallaxClientOptions, ChainName, TraceEvent, TxHashHint } from './types';
