@@ -5,17 +5,22 @@
  * Usage:
  *   npm run cli                                    # Interactive demo
  *   npm run cli -- create <name>                   # Create a new trace
- *   npm run cli -- add-attribute <key> <value>     # Add attribute to trace (requires trace name first)
+ *   npm run cli -- add-attribute <key> <value>     # Add attribute to trace
  *   npm run cli -- add-event <name> [details]      # Add event to trace
  *   npm run cli -- add-tag <tag>                   # Add tag to trace
- *   npm run cli -- set-tx <hash> <chain>           # Set transaction hash (chain: ethereum, polygon, etc.)
+ *   npm run cli -- add-tx <hash> <chain>           # Add transaction hash hint
+ *   npm run cli -- add-stack [name] [details]      # Add current stack trace as event
+ *   npm run cli -- event-stack <name> [details]    # Add event with stack trace
+ *   npm run cli -- capture-stack <name>            # Capture stack trace for later
+ *   npm run cli -- add-captured <name> [event]     # Add previously captured stack trace
  *   npm run cli -- submit                          # Submit the trace
  *   npm run cli -- builder                         # Use the builder pattern demo
  *   npm run cli -- interactive                     # Interactive mode with prompts
  */
 
 import 'dotenv/config';
-import { ParallaxClient, ParallaxTrace, ChainName } from '../src/parallax';
+import { ParallaxClient, ParallaxTrace, ChainName, captureStackTrace } from '../src/parallax';
+import type { StackTrace } from '../src/parallax';
 import * as readline from 'readline';
 
 // Configuration from environment variables
@@ -65,7 +70,10 @@ function logWarning(message: string) {
 }
 
 // Initialize client
-const client = new ParallaxClient(API_KEY, API_URL);
+const client = new ParallaxClient(API_KEY, { apiUrl: API_URL });
+
+// Store captured stack traces for later use
+const capturedStackTraces: Map<string, StackTrace> = new Map();
 
 // Valid chain names (matching ChainName type)
 const VALID_CHAINS: ChainName[] = ['ethereum', 'polygon', 'arbitrum', 'base', 'optimism', 'bsc'];
@@ -113,7 +121,7 @@ function addAttribute(key: string, value: string) {
   else {
     try {
       parsedValue = JSON.parse(value);
-    } catch (e) {
+    } catch {
       // Keep as string if not valid JSON
       // This is expected for plain string values like "hello" or "0xabc123"
     }
@@ -140,7 +148,7 @@ function addEvent(eventName: string, details?: string) {
   if (details) {
     try {
       parsedDetails = JSON.parse(details);
-    } catch (e) {
+    } catch {
       // If not valid JSON, treat as string (expected for plain text details)
       parsedDetails = details;
     }
@@ -167,8 +175,8 @@ function addTag(tag: string) {
   logSuccess(`Added tag: ${tag}`);
 }
 
-// Command: Set transaction hash hint
-function setTxHint(txHash: string, chain: string, details?: string) {
+// Command: Add transaction hash hint
+function addTxHintCmd(txHash: string, chain: string, details?: string) {
   if (!currentTrace) {
     logError('No active trace. Create one first with: npm run cli -- create <name>');
     process.exit(1);
@@ -176,19 +184,112 @@ function setTxHint(txHash: string, chain: string, details?: string) {
 
   if (!txHash || !chain) {
     logError('Both txHash and chain are required');
-    logInfo(`Usage: npm run cli -- set-tx <txHash> <chain> [details]`);
+    logInfo(`Usage: npm run cli -- add-tx <txHash> <chain> [details]`);
     logInfo(`Valid chains: ${VALID_CHAINS.join(', ')}`);
     process.exit(1);
   }
 
   try {
     const validChain = validateChainName(chain);
-    currentTrace.setTxHint(txHash, validChain, details);
-    logSuccess(`Set transaction hint: ${txHash} on ${chain}`);
+    currentTrace.addTxHint(txHash, validChain, details);
+    logSuccess(`Added transaction hint: ${txHash} on ${chain}`);
   } catch (error) {
     logError(`${error instanceof Error ? error.message : String(error)}`);
     process.exit(1);
   }
+}
+
+// Command: Add stack trace
+function addStackTraceCmd(eventName?: string, details?: string) {
+  if (!currentTrace) {
+    logError('No active trace. Create one first with: npm run cli -- create <name>');
+    process.exit(1);
+  }
+
+  let parsedDetails: object | undefined;
+  if (details) {
+    try {
+      parsedDetails = JSON.parse(details);
+    } catch {
+      parsedDetails = { message: details };
+    }
+  }
+
+  currentTrace.addStackTrace(eventName || 'stack_trace', parsedDetails);
+  logSuccess(`Added stack trace event: ${eventName || 'stack_trace'}`);
+}
+
+// Command: Capture stack trace for later use
+function captureStackTraceCmd(name: string) {
+  if (!name) {
+    logError('Name is required for capturing stack trace');
+    logInfo('Usage: npm run cli -- capture-stack <name>');
+    process.exit(1);
+  }
+
+  const stack = captureStackTrace();
+  capturedStackTraces.set(name, stack);
+  logSuccess(`Captured stack trace as "${name}"`);
+  logInfo(`Top frame: ${stack.frames[0]?.functionName || 'unknown'} at ${stack.frames[0]?.fileName || 'unknown'}:${stack.frames[0]?.lineNumber || 0}`);
+}
+
+// Command: Add a previously captured stack trace
+function addCapturedStackTraceCmd(name: string, eventName?: string, details?: string) {
+  if (!currentTrace) {
+    logError('No active trace. Create one first with: npm run cli -- create <name>');
+    process.exit(1);
+  }
+
+  if (!name) {
+    logError('Stack trace name is required');
+    logInfo('Usage: npm run cli -- add-captured-stack <name> [event-name] [details]');
+    process.exit(1);
+  }
+
+  const stack = capturedStackTraces.get(name);
+  if (!stack) {
+    logError(`No captured stack trace found with name "${name}"`);
+    logInfo(`Available: ${Array.from(capturedStackTraces.keys()).join(', ') || 'none'}`);
+    process.exit(1);
+  }
+
+  let parsedDetails: object | undefined;
+  if (details) {
+    try {
+      parsedDetails = JSON.parse(details);
+    } catch {
+      parsedDetails = { message: details };
+    }
+  }
+
+  currentTrace.addExistingStackTrace(stack, eventName || 'stack_trace', parsedDetails);
+  logSuccess(`Added captured stack trace "${name}" as event: ${eventName || 'stack_trace'}`);
+}
+
+// Command: Add event with stack trace
+function addEventWithStackCmd(eventName: string, details?: string) {
+  if (!currentTrace) {
+    logError('No active trace. Create one first with: npm run cli -- create <name>');
+    process.exit(1);
+  }
+
+  if (!eventName) {
+    logError('Event name is required');
+    logInfo('Usage: npm run cli -- event-stack <name> [details]');
+    process.exit(1);
+  }
+
+  let parsedDetails: string | object | undefined = details;
+  if (details) {
+    try {
+      parsedDetails = JSON.parse(details);
+    } catch {
+      // Keep as string
+    }
+  }
+
+  currentTrace.addEvent(eventName, parsedDetails, { captureStackTrace: true });
+  logSuccess(`Added event with stack trace: ${eventName}`);
 }
 
 // Command: Create trace (submit)
@@ -236,8 +337,16 @@ ${colors.bright}Available Commands:${colors.reset}
   ${colors.green}attr <key> <value>${colors.reset}                 Add an attribute (alias: attribute)
   ${colors.green}event <name> [details]${colors.reset}             Add an event (details can be JSON)
   ${colors.green}tag <tag>${colors.reset}                          Add a tag
-  ${colors.green}tx <hash> <chain> [details]${colors.reset}        Set transaction hint (alias: set-tx, settx)
-  ${colors.green}submit${colors.reset}                             Create the trace (alias: create)
+  ${colors.green}tx <hash> <chain> [details]${colors.reset}        Add transaction hint (alias: add-tx)
+  ${colors.green}submit${colors.reset}                             Create the trace
+
+${colors.bright}Stack Trace Commands:${colors.reset}
+  ${colors.green}stack [name] [details]${colors.reset}             Add current stack trace as event (alias: add-stack)
+  ${colors.green}event-stack <name> [details]${colors.reset}       Add event with stack trace captured
+  ${colors.green}capture <name>${colors.reset}                     Capture stack trace for later use
+  ${colors.green}use-stack <name> [event] [details]${colors.reset} Add previously captured stack trace
+
+${colors.bright}Other Commands:${colors.reset}
   ${colors.green}status${colors.reset}                             Show current trace status
   ${colors.green}help${colors.reset}                               Show this help
   ${colors.green}exit${colors.reset}                               Exit interactive mode (alias: quit)
@@ -252,15 +361,15 @@ ${colors.bright}Tips:${colors.reset}
 
 ${colors.bright}Examples:${colors.reset}
   create my_swap_trace
-  create "My Complex Trace Name"
   attr user 0xabc123
   attr slippage_bps 25
-  attr config '{"timeout":30}'
   tag swap
   event wallet_connected '{"wallet":"MetaMask"}'
-  event "transaction completed" "with success"
-  tx 0x123abc ethereum
-  set-tx 0x123abc polygon "Bridge transaction"
+  tx 0x123abc ethereum "Swap transaction"
+  stack checkpoint '{"stage":"validation"}'
+  event-stack error_occurred '{"code":500}'
+  capture before_api_call
+  use-stack before_api_call api_response '{"status":"success"}'
   submit
     `);
   };
@@ -347,9 +456,28 @@ ${colors.bright}Examples:${colors.reset}
           break;
 
         case 'tx':
-        case 'set-tx':
-        case 'settx':
-          setTxHint(args[0], args[1], args.slice(2).join(' '));
+        case 'add-tx':
+        case 'addtx':
+          addTxHintCmd(args[0], args[1], args.slice(2).join(' '));
+          break;
+
+        case 'stack':
+        case 'add-stack':
+          addStackTraceCmd(args[0], args.slice(1).join(' '));
+          break;
+
+        case 'capture-stack':
+        case 'capture':
+          captureStackTraceCmd(args[0]);
+          break;
+
+        case 'add-captured':
+        case 'use-stack':
+          addCapturedStackTraceCmd(args[0], args[1], args.slice(2).join(' '));
+          break;
+
+        case 'event-stack':
+          addEventWithStackCmd(args[0], args.slice(1).join(' '));
           break;
 
         case 'submit':
@@ -387,9 +515,13 @@ async function builderDemo() {
   logSection('Builder Pattern Demo');
 
   try {
-    logInfo('Building trace with fluent API...');
+    logInfo('Building trace with fluent API (including stack trace capture)...');
 
-    const traceId = await client.trace('swap_execution_demo')
+    // Capture a stack trace before the trace for demonstration
+    const preTraceStack = captureStackTrace();
+    logInfo('Captured stack trace before creating trace');
+
+    const traceId = await client.trace('swap_execution_demo', { captureStackTrace: true })
       .addAttribute('user', '0xabc123def456')
       .addAttribute('slippage_bps', 25)
       .addAttribute('isPremium', true)
@@ -400,13 +532,24 @@ async function builderDemo() {
       .addEvent('wallet_connected', { wallet: 'MetaMask', version: '10.0.0' })
       .addEvent('quote_requested', { token_in: 'ETH', token_out: 'USDC', amount: '1.0' })
       .addEvent('quote_received', { price: 2500, slippage: 0.25 })
+      // Add event with automatic stack trace capture
+      .addEvent('validation_complete', { valid: true }, { captureStackTrace: true })
+      // Add explicit stack trace as event
+      .addStackTrace('checkpoint', { stage: 'pre_transaction' })
+      // Add the pre-captured stack trace
+      .addExistingStackTrace(preTraceStack, 'trace_origin', { note: 'captured before trace creation' })
       .addEvent('tx_signed')
-      .setTxHint('0xdemo123abc456def', 'ethereum', 'Demo swap transaction')
+      .addTxHint('0xdemo123abc456def', 'ethereum', 'Demo swap transaction')
       .create();
 
     if (traceId) {
       logSuccess('Trace created with builder!');
       logInfo(`Trace ID: ${traceId}`);
+      logInfo('Trace includes:');
+      logInfo('  - Source location attributes (from captureStackTrace option)');
+      logInfo('  - Event with stack trace (validation_complete)');
+      logInfo('  - Explicit stack trace event (checkpoint)');
+      logInfo('  - Pre-captured stack trace (trace_origin)');
     } else {
       logError('Failed to create trace');
     }
@@ -440,8 +583,14 @@ ${colors.bright}Build a Trace:${colors.reset}
   ${colors.green}npm run cli -- add-attribute <key> <value>${colors.reset} Add an attribute
   ${colors.green}npm run cli -- add-event <name> [details]${colors.reset}  Add an event
   ${colors.green}npm run cli -- add-tag <tag>${colors.reset}               Add a tag
-  ${colors.green}npm run cli -- set-tx <hash> <chain>${colors.reset}       Set transaction hint
+  ${colors.green}npm run cli -- add-tx <hash> <chain>${colors.reset}       Add transaction hint
   ${colors.green}npm run cli -- submit${colors.reset}                      Create the trace
+
+${colors.bright}Stack Trace Commands:${colors.reset}
+  ${colors.green}npm run cli -- add-stack [name] [details]${colors.reset}  Add current stack trace as event
+  ${colors.green}npm run cli -- event-stack <name> [details]${colors.reset} Add event with stack trace
+  ${colors.green}npm run cli -- capture-stack <name>${colors.reset}        Capture stack trace for later
+  ${colors.green}npm run cli -- add-captured <name> [event]${colors.reset} Add captured stack trace
 
 ${colors.bright}Valid Chains:${colors.reset}
   ${VALID_CHAINS.join(', ')}
@@ -461,14 +610,17 @@ ${colors.bright}Example Workflow:${colors.reset}
 
   ${colors.yellow}# Add data to the trace${colors.reset}
   npm run cli -- add-attribute user 0xabc123
-  npm run cli -- add-attribute slippage_bps 25
-  npm run cli -- add-attribute config '{"timeout":30}'
   npm run cli -- add-tag swap
   npm run cli -- add-event wallet_connected '{"wallet":"MetaMask"}'
-  npm run cli -- add-event quote_received
 
-  ${colors.yellow}# Set transaction hint (optional)${colors.reset}
-  npm run cli -- set-tx 0x123abc ethereum "Swap transaction"
+  ${colors.yellow}# Add stack trace at a checkpoint${colors.reset}
+  npm run cli -- add-stack checkpoint '{"stage":"validation"}'
+
+  ${colors.yellow}# Add event with automatic stack trace${colors.reset}
+  npm run cli -- event-stack error_occurred '{"code":500}'
+
+  ${colors.yellow}# Add transaction hint${colors.reset}
+  npm run cli -- add-tx 0x123abc ethereum "Swap transaction"
 
   ${colors.yellow}# Create the trace${colors.reset}
   npm run cli -- submit
@@ -478,8 +630,9 @@ ${colors.bright}Interactive Mode:${colors.reset}
   Then use commands like:
     create my_trace
     attr user 0xabc
-    attr config '{"key":"value"}'
     event wallet_connected
+    stack checkpoint
+    event-stack error '{"code":500}'
     tx 0x123 ethereum
     submit
   `);
@@ -519,9 +672,28 @@ async function main() {
         addTag(args[0]);
         break;
 
-      case 'set-tx':
+      case 'add-tx':
       case 'tx':
-        setTxHint(args[0], args[1], args.slice(2).join(' '));
+        addTxHintCmd(args[0], args[1], args.slice(2).join(' '));
+        break;
+
+      case 'add-stack':
+      case 'stack':
+        addStackTraceCmd(args[0], args.slice(1).join(' '));
+        break;
+
+      case 'capture-stack':
+      case 'capture':
+        captureStackTraceCmd(args[0]);
+        break;
+
+      case 'add-captured':
+      case 'use-stack':
+        addCapturedStackTraceCmd(args[0], args[1], args.slice(2).join(' '));
+        break;
+
+      case 'event-stack':
+        addEventWithStackCmd(args[0], args.slice(1).join(' '));
         break;
 
       case 'submit':
