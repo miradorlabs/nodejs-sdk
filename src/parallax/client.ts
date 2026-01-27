@@ -14,7 +14,7 @@ import type {
 import { ParallaxGatewayServiceClientImpl } from 'mirador-gateway-parallax/proto/gateway/parallax/v1/parallax_gateway';
 import { NodeGrpcRpc } from '../grpc';
 import { ParallaxTrace } from './trace';
-import type { ParallaxClientOptions } from './types';
+import type { ParallaxClientOptions, TraceOptions } from './types';
 
 // Default configuration values
 const DEFAULT_API_URL = 'parallax-gateway-dev.mirador.org:443';
@@ -82,7 +82,7 @@ export class ParallaxClient {
    *
    * Example usage:
    * ```typescript
-   * const traceId = await client.trace("swap_execution")
+   * const traceId = await client.trace("swap_execution", { captureStackTrace: true })
    *   .addAttribute("user", "0xabc...")
    *   .addAttribute("slippage_bps", 25)
    *   .addTag("dex")
@@ -92,9 +92,10 @@ export class ParallaxClient {
    * ```
    *
    * @param name Optional name of the trace (defaults to empty string)
+   * @param options Optional trace options including captureStackTrace
    * @returns A ParallaxTrace builder instance
    */
-  trace(name: string = ''): ParallaxTrace {
-    return new ParallaxTrace(this, name);
+  trace(name: string = '', options?: TraceOptions): ParallaxTrace {
+    return new ParallaxTrace(this, name, options);
   }
 }
