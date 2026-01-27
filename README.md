@@ -14,6 +14,7 @@ npm install @miradorlabs/parallax
 - **Keep-Alive** - Automatic periodic pings to maintain trace liveness (configurable interval)
 - **Trace Lifecycle** - Explicit close trace method with automatic cleanup
 - **Blockchain Integration** - Built-in support for correlating traces with blockchain transactions
+- **Stack Trace Capture** - Automatic or manual capture of call stack for debugging
 - **TypeScript Support** - Full type definitions included
 - **Multiple Transaction Hints** - Support for multiple blockchain transaction correlations
 
@@ -69,14 +70,22 @@ interface ParallaxClientOptions {
 
 #### Methods
 
-##### `trace(name?)`
+##### `trace(name?, options?)`
 
 Creates a new trace builder.
 
 ```typescript
 const trace = client.trace('MyTrace');
 const trace = client.trace();  // name is optional (defaults to empty string)
+
+// With stack trace capture - records where in your code the trace was created
+const trace = client.trace('MyTrace', { captureStackTrace: true });
 ```
+
+| Parameter | Type           | Required | Description                                   |
+|-----------|----------------|----------|-----------------------------------------------|
+| `name`    | `string`       | No       | Name of the trace (defaults to empty string)  |
+| `options` | `TraceOptions` | No       | Trace options including `captureStackTrace`   |
 
 Returns: `ParallaxTrace` builder instance
 
@@ -116,15 +125,61 @@ trace.addTag('transaction')
      .addTags(['ethereum', 'send'])
 ```
 
-#### `addEvent(name, details?, timestamp?)`
+#### `addEvent(name, details?, options?)`
 
-Add an event with optional details (string or object) and optional timestamp.
+Add an event with optional details (string or object) and optional settings.
 
 ```typescript
 trace.addEvent('wallet_connected', { wallet: 'MetaMask' })
      .addEvent('transaction_initiated')
      .addEvent('transaction_confirmed', { blockNumber: 12345 })
+
+// With stack trace - captures where in your code the event was added
+trace.addEvent('error_occurred', { code: 500 }, { captureStackTrace: true })
+
+// Legacy: timestamp can still be passed as third parameter for backward compatibility
+trace.addEvent('custom_event', 'details', new Date())
 ```
+
+| Parameter | Type                       | Description                                         |
+|-----------|----------------------------|-----------------------------------------------------|
+| `name`    | `string`                   | Event name                                          |
+| `details` | `string \| object`         | Optional event details (objects are stringified)    |
+| `options` | `AddEventOptions \| Date`  | Options with `captureStackTrace`, or legacy Date    |
+
+#### `addStackTrace(eventName?, additionalDetails?)`
+
+Capture and add the current stack trace as an event. Useful for debugging or tracking code paths.
+
+```typescript
+trace.addStackTrace()  // Creates event named "stack_trace"
+trace.addStackTrace('checkpoint', { stage: 'validation' })
+```
+
+| Parameter           | Type     | Description                                      |
+|---------------------|----------|--------------------------------------------------|
+| `eventName`         | `string` | Event name (defaults to "stack_trace")           |
+| `additionalDetails` | `object` | Optional additional details to include           |
+
+#### `addExistingStackTrace(stackTrace, eventName?, additionalDetails?)`
+
+Add a previously captured stack trace as an event. Useful when you need to capture a stack trace at one point but record it later.
+
+```typescript
+import { captureStackTrace } from '@miradorlabs/parallax';
+
+// Capture stack trace now
+const stack = captureStackTrace();
+
+// ... later ...
+trace.addExistingStackTrace(stack, 'deferred_location', { reason: 'async operation' })
+```
+
+| Parameter           | Type         | Description                                      |
+|---------------------|--------------|--------------------------------------------------|
+| `stackTrace`        | `StackTrace` | Previously captured stack trace                  |
+| `eventName`         | `string`     | Event name (defaults to "stack_trace")           |
+| `additionalDetails` | `object`     | Optional additional details to include           |
 
 #### `addTxHint(txHash, chain, details?)`
 
@@ -250,6 +305,32 @@ async function trackSwapExecution(userAddress: string, txHash: string) {
 | `PARALLAX_API_KEY` | API key for authentication |
 | `GRPC_BASE_URL_API` | Override gateway URL |
 
+## Stack Trace Utilities
+
+The SDK exports utilities for capturing and formatting stack traces:
+
+```typescript
+import {
+  captureStackTrace,
+  formatStackTrace,
+  formatStackTraceReadable
+} from '@miradorlabs/parallax';
+
+// Capture current stack trace
+const stack = captureStackTrace();
+// stack.frames: Array of { functionName, fileName, lineNumber, columnNumber }
+// stack.raw: Original Error.stack string
+
+// Format for storage (JSON string)
+const json = formatStackTrace(stack);
+
+// Format for display (human-readable)
+const readable = formatStackTraceReadable(stack);
+// Output:
+//   at myFunction (/path/to/file.ts:42:10)
+//   at caller (/path/to/other.ts:15:5)
+```
+
 ## TypeScript Support
 
 Full TypeScript support with exported types:
@@ -259,7 +340,11 @@ import {
   ParallaxClient,
   ParallaxTrace,
   ParallaxClientOptions,
-  ChainName,  // 'ethereum' | 'polygon' | 'arbitrum' | 'base' | 'optimism' | 'bsc'
+  TraceOptions,      // { captureStackTrace?: boolean }
+  AddEventOptions,   // { captureStackTrace?: boolean }
+  StackFrame,        // { functionName, fileName, lineNumber, columnNumber }
+  StackTrace,        // { frames: StackFrame[], raw: string }
+  ChainName,         // 'ethereum' | 'polygon' | 'arbitrum' | 'base' | 'optimism' | 'bsc'
 } from '@miradorlabs/parallax';
 ```
 

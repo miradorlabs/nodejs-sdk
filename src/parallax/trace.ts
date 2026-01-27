@@ -13,7 +13,8 @@ import type {
 } from 'mirador-gateway-parallax/proto/gateway/parallax/v1/parallax_gateway';
 import { Chain } from 'mirador-gateway-parallax/proto/gateway/parallax/v1/parallax_gateway';
 import { ResponseStatus_StatusCode } from 'mirador-gateway-parallax/proto/common/v1/status';
-import type { ChainName, TraceEvent, TxHashHint } from './types';
+import type { ChainName, TraceEvent, TxHashHint, TraceOptions, AddEventOptions, StackTrace } from './types';
+import { captureStackTrace, formatStackTrace } from './stacktrace';
 
 /**
  * Maps chain names to proto Chain enum values
@@ -53,11 +54,17 @@ export class ParallaxTrace {
   private keepAliveTimer: NodeJS.Timeout | null = null;
   private keepAliveIntervalMs: number;
   private closed: boolean = false;
+  private creationStackTrace: StackTrace | null = null;
 
-  constructor(client: TraceSubmitter, name: string = '') {
+  constructor(client: TraceSubmitter, name: string = '', options?: TraceOptions) {
     this.client = client;
     this.name = name;
     this.keepAliveIntervalMs = client.keepAliveIntervalMs;
+
+    if (options?.captureStackTrace) {
+      // Skip 2 frames: this constructor and the trace() method that called it
+      this.creationStackTrace = captureStackTrace(2);
+    }
   }
 
   /**
@@ -129,23 +136,110 @@ export class ParallaxTrace {
    * Add an event to the trace
    * @param eventName Name of the event
    * @param details Optional details (can be a JSON string or object that will be stringified)
-   * @param timestamp Optional timestamp (defaults to current time)
+   * @param options Optional settings including captureStackTrace
    * @returns This trace builder for chaining
    */
-  addEvent(eventName: string, details?: string | object, timestamp?: Date): this {
+  addEvent(eventName: string, details?: string | object, options?: AddEventOptions | Date): this {
     if (this.closed) {
       console.warn('[ParallaxTrace] Trace is closed, ignoring addEvent');
       return this;
     }
-    const detailsString =
-      typeof details === 'object' && details !== null
-        ? JSON.stringify(details)
-        : details;
+
+    // Handle backward compatibility: options can be a Date (legacy timestamp parameter)
+    let timestamp: Date | undefined;
+    let eventOptions: AddEventOptions | undefined;
+
+    if (options instanceof Date) {
+      timestamp = options;
+    } else {
+      eventOptions = options;
+    }
+
+    // Build details object with optional stack trace
+    let finalDetails: string | undefined;
+    if (eventOptions?.captureStackTrace) {
+      const stackTrace = captureStackTrace(1); // Skip 1 frame (this method)
+      const detailsObj = typeof details === 'object' && details !== null
+        ? details
+        : details !== undefined
+          ? { message: details }
+          : {};
+      finalDetails = JSON.stringify({
+        ...detailsObj,
+        stackTrace: {
+          frames: stackTrace.frames,
+          raw: stackTrace.raw,
+        },
+      });
+    } else {
+      finalDetails =
+        typeof details === 'object' && details !== null
+          ? JSON.stringify(details)
+          : details;
+    }
 
     this.events.push({
       eventName,
-      details: detailsString,
+      details: finalDetails,
       timestamp: timestamp || new Date(),
+    });
+    return this;
+  }
+
+  /**
+   * Capture and add the current stack trace as an event
+   * @param eventName Name for the stack trace event (defaults to "stack_trace")
+   * @param additionalDetails Optional additional details to include with the stack trace
+   * @returns This trace builder for chaining
+   */
+  addStackTrace(eventName: string = 'stack_trace', additionalDetails?: object): this {
+    if (this.closed) {
+      console.warn('[ParallaxTrace] Trace is closed, ignoring addStackTrace');
+      return this;
+    }
+
+    const stackTrace = captureStackTrace(1); // Skip 1 frame (this method)
+    const details = {
+      ...additionalDetails,
+      stackTrace: {
+        frames: stackTrace.frames,
+        raw: stackTrace.raw,
+      },
+    };
+
+    this.events.push({
+      eventName,
+      details: JSON.stringify(details),
+      timestamp: new Date(),
+    });
+    return this;
+  }
+
+  /**
+   * Add a pre-captured stack trace as an event
+   * @param stackTrace The stack trace to add
+   * @param eventName Name for the stack trace event (defaults to "stack_trace")
+   * @param additionalDetails Optional additional details to include with the stack trace
+   * @returns This trace builder for chaining
+   */
+  addExistingStackTrace(stackTrace: StackTrace, eventName: string = 'stack_trace', additionalDetails?: object): this {
+    if (this.closed) {
+      console.warn('[ParallaxTrace] Trace is closed, ignoring addExistingStackTrace');
+      return this;
+    }
+
+    const details = {
+      ...additionalDetails,
+      stackTrace: {
+        frames: stackTrace.frames,
+        raw: stackTrace.raw,
+      },
+    };
+
+    this.events.push({
+      eventName,
+      details: JSON.stringify(details),
+      timestamp: new Date(),
     });
     return this;
   }
@@ -181,11 +275,23 @@ export class ParallaxTrace {
       return undefined;
     }
 
+    // Build attributes, including creation stack trace if captured
+    const attributesToSend = { ...this.attributes };
+    if (this.creationStackTrace) {
+      attributesToSend['source.stack_trace'] = formatStackTrace(this.creationStackTrace);
+      if (this.creationStackTrace.frames.length > 0) {
+        const topFrame = this.creationStackTrace.frames[0];
+        attributesToSend['source.file'] = topFrame.fileName;
+        attributesToSend['source.line'] = String(topFrame.lineNumber);
+        attributesToSend['source.function'] = topFrame.functionName;
+      }
+    }
+
     const request: CreateTraceRequest = {
       name: this.name,
       data: {
-        attributes: Object.keys(this.attributes).length > 0
-          ? [{ attributes: this.attributes, timestamp: new Date() }]
+        attributes: Object.keys(attributesToSend).length > 0
+          ? [{ attributes: attributesToSend, timestamp: new Date() }]
           : [],
         tags: this.tags.length > 0
           ? [{ tags: this.tags, timestamp: new Date() }]

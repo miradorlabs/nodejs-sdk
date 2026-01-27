@@ -1,5 +1,6 @@
 // ParallaxClient Unit Tests
-import { ParallaxClient, ParallaxTrace, ChainName } from '../src/parallax';
+import { ParallaxClient, ParallaxTrace, ChainName, captureStackTrace } from '../src/parallax';
+import type { StackTrace } from '../src/parallax';
 import { NodeGrpcRpc } from '../src/grpc';
 import * as apiGateway from "mirador-gateway-parallax/proto/gateway/parallax/v1/parallax_gateway";
 import { Chain } from "mirador-gateway-parallax/proto/gateway/parallax/v1/parallax_gateway";
@@ -8,8 +9,9 @@ import { ResponseStatus_StatusCode } from "mirador-gateway-parallax/proto/common
 // Mock the NodeGrpcRpc class
 jest.mock('../src/grpc');
 
-// Mock console.log to avoid cluttering test output
+// Mock console.log and console.warn to avoid cluttering test output
 const mockConsoleLog = jest.spyOn(console, 'log').mockImplementation();
+const mockConsoleWarn = jest.spyOn(console, 'warn').mockImplementation();
 
 describe('ParallaxClient', () => {
   let parallaxClient: ParallaxClient;
@@ -35,10 +37,12 @@ describe('ParallaxClient', () => {
 
   afterEach(() => {
     mockConsoleLog.mockClear();
+    mockConsoleWarn.mockClear();
   });
 
   afterAll(() => {
     mockConsoleLog.mockRestore();
+    mockConsoleWarn.mockRestore();
   });
 
   describe('constructor', () => {
@@ -63,7 +67,7 @@ describe('ParallaxClient', () => {
     it('should use custom API URL if provided', () => {
       const apiKey = 'test-key';
       const customUrl = 'custom-gateway.example.com:50053';
-      new ParallaxClient(apiKey, customUrl);
+      new ParallaxClient(apiKey, { apiUrl: customUrl });
       expect(NodeGrpcRpc).toHaveBeenCalledWith(customUrl, apiKey);
     });
   });
@@ -96,13 +100,13 @@ describe('ParallaxClient', () => {
         .create();
 
       expect(traceId).toBe('trace-builder-123');
-      expect(mockApiGatewayClient.CreateTrace).toHaveBeenCalledWith({
-        name: 'swap_execution',
-        attributes: { user: '0xabc...' },
-        tags: ['dex'],
-        events: [],
-        txHashHint: undefined,
-      });
+
+      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      expect(calls.name).toBe('swap_execution');
+      expect(calls.data?.attributes?.[0]?.attributes).toEqual({ user: '0xabc...' });
+      expect(calls.data?.tags?.[0]?.tags).toEqual(['dex']);
+      expect(calls.data?.events).toEqual([]);
+      expect(calls.data?.txHashHints).toEqual([]);
     });
 
     it('should handle multiple attributes with different types', async () => {
@@ -122,16 +126,12 @@ describe('ParallaxClient', () => {
         .addAttribute('booleanValue', true)
         .create();
 
-      expect(mockApiGatewayClient.CreateTrace).toHaveBeenCalledWith({
-        name: 'test',
-        attributes: {
-          stringValue: 'hello',
-          numberValue: '42',
-          booleanValue: 'true',
-        },
-        tags: [],
-        events: [],
-        txHashHint: undefined,
+      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      expect(calls.name).toBe('test');
+      expect(calls.data?.attributes?.[0]?.attributes).toEqual({
+        stringValue: 'hello',
+        numberValue: '42',
+        booleanValue: 'true',
       });
     });
 
@@ -151,15 +151,10 @@ describe('ParallaxClient', () => {
         .addAttribute('nested', { a: { b: 'c' } })
         .create();
 
-      expect(mockApiGatewayClient.CreateTrace).toHaveBeenCalledWith({
-        name: 'test',
-        attributes: {
-          metadata: '{"key":"value","count":42}',
-          nested: '{"a":{"b":"c"}}',
-        },
-        tags: [],
-        events: [],
-        txHashHint: undefined,
+      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      expect(calls.data?.attributes?.[0]?.attributes).toEqual({
+        metadata: '{"key":"value","count":42}',
+        nested: '{"a":{"b":"c"}}',
       });
     });
 
@@ -183,17 +178,12 @@ describe('ParallaxClient', () => {
         })
         .create();
 
-      expect(mockApiGatewayClient.CreateTrace).toHaveBeenCalledWith({
-        name: 'test',
-        attributes: {
-          user: '0xabc',
-          slippage: '25',
-          isPremium: 'true',
-          config: '{"setting":"value"}',
-        },
-        tags: [],
-        events: [],
-        txHashHint: undefined,
+      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      expect(calls.data?.attributes?.[0]?.attributes).toEqual({
+        user: '0xabc',
+        slippage: '25',
+        isPremium: 'true',
+        config: '{"setting":"value"}',
       });
     });
 
@@ -214,13 +204,8 @@ describe('ParallaxClient', () => {
         .addTags(['tag3', 'tag4'])
         .create();
 
-      expect(mockApiGatewayClient.CreateTrace).toHaveBeenCalledWith({
-        name: 'test',
-        attributes: {},
-        tags: ['tag1', 'tag2', 'tag3', 'tag4'],
-        events: [],
-        txHashHint: undefined,
-      });
+      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      expect(calls.data?.tags?.[0]?.tags).toEqual(['tag1', 'tag2', 'tag3', 'tag4']);
     });
 
     it('should handle events with different detail types', async () => {
@@ -244,18 +229,19 @@ describe('ParallaxClient', () => {
         .create();
 
       const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
-      expect(calls.events).toHaveLength(3);
-      expect(calls.events[0].name).toBe('event1');
-      expect(calls.events[0].details).toBe('string details');
-      expect(calls.events[0].timestamp).toEqual(timestamp1);
-      expect(calls.events[1].name).toBe('event2');
-      expect(calls.events[1].details).toBe(JSON.stringify({ key: 'value', count: 42 }));
-      expect(calls.events[2].name).toBe('event3');
-      expect(calls.events[2].details).toBeUndefined();
-      expect(calls.events[2].timestamp).toBeInstanceOf(Date);
+      const events = calls.data?.events;
+      expect(events).toHaveLength(3);
+      expect(events?.[0].name).toBe('event1');
+      expect(events?.[0].details).toBe('string details');
+      expect(events?.[0].timestamp).toEqual(timestamp1);
+      expect(events?.[1].name).toBe('event2');
+      expect(events?.[1].details).toBe(JSON.stringify({ key: 'value', count: 42 }));
+      expect(events?.[2].name).toBe('event3');
+      expect(events?.[2].details).toBeUndefined();
+      expect(events?.[2].timestamp).toBeInstanceOf(Date);
     });
 
-    it('should set transaction hash hint via setTxHint with ChainName', async () => {
+    it('should set transaction hash hint via addTxHint with ChainName', async () => {
       const mockResponse: apiGateway.CreateTraceResponse = {
         status: {
           code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
@@ -267,15 +253,16 @@ describe('ParallaxClient', () => {
       mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
 
       await parallaxClient.trace('swap')
-        .setTxHint('0x123...', 'ethereum', 'Swap transaction')
+        .addTxHint('0x123...', 'ethereum', 'Swap transaction')
         .create();
 
       const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
-      expect(calls.txHashHint).toBeDefined();
-      expect(calls.txHashHint?.txHash).toBe('0x123...');
-      expect(calls.txHashHint?.chain).toBe(Chain.CHAIN_ETHEREUM);
-      expect(calls.txHashHint?.details).toBe('Swap transaction');
-      expect(calls.txHashHint?.timestamp).toBeInstanceOf(Date);
+      const txHashHints = calls.data?.txHashHints;
+      expect(txHashHints).toHaveLength(1);
+      expect(txHashHints?.[0]?.txHash).toBe('0x123...');
+      expect(txHashHints?.[0]?.chain).toBe(Chain.CHAIN_ETHEREUM);
+      expect(txHashHints?.[0]?.details).toBe('Swap transaction');
+      expect(txHashHints?.[0]?.timestamp).toBeInstanceOf(Date);
     });
 
     it('should handle different chain names', async () => {
@@ -291,47 +278,47 @@ describe('ParallaxClient', () => {
 
       // Test polygon
       await parallaxClient.trace('test')
-        .setTxHint('0xpolygon...', 'polygon')
+        .addTxHint('0xpolygon...', 'polygon')
         .create();
 
       let calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
-      expect(calls.txHashHint?.chain).toBe(Chain.CHAIN_POLYGON);
+      expect(calls.data?.txHashHints?.[0]?.chain).toBe(Chain.CHAIN_POLYGON);
 
       // Test arbitrum
       mockApiGatewayClient.CreateTrace.mockClear();
       await parallaxClient.trace('test')
-        .setTxHint('0xarbitrum...', 'arbitrum')
+        .addTxHint('0xarbitrum...', 'arbitrum')
         .create();
 
       calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
-      expect(calls.txHashHint?.chain).toBe(Chain.CHAIN_ARBITRUM);
+      expect(calls.data?.txHashHints?.[0]?.chain).toBe(Chain.CHAIN_ARBITRUM);
 
       // Test base
       mockApiGatewayClient.CreateTrace.mockClear();
       await parallaxClient.trace('test')
-        .setTxHint('0xbase...', 'base')
+        .addTxHint('0xbase...', 'base')
         .create();
 
       calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
-      expect(calls.txHashHint?.chain).toBe(Chain.CHAIN_BASE);
+      expect(calls.data?.txHashHints?.[0]?.chain).toBe(Chain.CHAIN_BASE);
 
       // Test optimism
       mockApiGatewayClient.CreateTrace.mockClear();
       await parallaxClient.trace('test')
-        .setTxHint('0xoptimism...', 'optimism')
+        .addTxHint('0xoptimism...', 'optimism')
         .create();
 
       calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
-      expect(calls.txHashHint?.chain).toBe(Chain.CHAIN_OPTIMISM);
+      expect(calls.data?.txHashHints?.[0]?.chain).toBe(Chain.CHAIN_OPTIMISM);
 
       // Test bsc
       mockApiGatewayClient.CreateTrace.mockClear();
       await parallaxClient.trace('test')
-        .setTxHint('0xbsc...', 'bsc')
+        .addTxHint('0xbsc...', 'bsc')
         .create();
 
       calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
-      expect(calls.txHashHint?.chain).toBe(Chain.CHAIN_BSC);
+      expect(calls.data?.txHashHints?.[0]?.chain).toBe(Chain.CHAIN_BSC);
     });
 
     it('should create without txHashHint when not set', async () => {
@@ -350,7 +337,7 @@ describe('ParallaxClient', () => {
         .create();
 
       const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
-      expect(calls.txHashHint).toBeUndefined();
+      expect(calls.data?.txHashHints).toEqual([]);
     });
 
     it('should build a complex trace with all features', async () => {
@@ -373,28 +360,28 @@ describe('ParallaxClient', () => {
         .addEvent('wallet_connected', 'MetaMask connected')
         .addEvent('quote_received', { amount: 100, token: 'USDC' })
         .addEvent('tx_signed')
-        .setTxHint('0x123...', 'ethereum')
+        .addTxHint('0x123...', 'ethereum')
         .create();
 
       expect(traceId).toBe('trace-complex');
 
       const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
       expect(calls.name).toBe('swap_execution');
-      expect(calls.attributes).toEqual({
+      expect(calls.data?.attributes?.[0]?.attributes).toEqual({
         user: '0xabc...',
         slippage_bps: '25',
         metadata: '{"version":"1.0"}',
       });
-      expect(calls.tags).toEqual(['dex', 'swap']);
-      expect(calls.events).toHaveLength(3);
-      expect(calls.txHashHint?.txHash).toBe('0x123...');
-      expect(calls.txHashHint?.chain).toBe(Chain.CHAIN_ETHEREUM);
+      expect(calls.data?.tags?.[0]?.tags).toEqual(['dex', 'swap']);
+      expect(calls.data?.events).toHaveLength(3);
+      expect(calls.data?.txHashHints?.[0]?.txHash).toBe('0x123...');
+      expect(calls.data?.txHashHints?.[0]?.chain).toBe(Chain.CHAIN_ETHEREUM);
     });
 
     it('should return undefined when trace creation fails with error status', async () => {
       const mockResponse: apiGateway.CreateTraceResponse = {
         status: {
-          code: ResponseStatus_StatusCode.STATUS_CODE_ERROR,
+          code: ResponseStatus_StatusCode.STATUS_CODE_INTERNAL_ERROR,
           errorMessage: 'Something went wrong'
         },
         traceId: '',
@@ -496,11 +483,11 @@ describe('ParallaxClient', () => {
         mockApiGatewayClient.CreateTrace.mockClear();
 
         await parallaxClient.trace('test')
-          .setTxHint('0x123', chainName)
+          .addTxHint('0x123', chainName)
           .create();
 
         const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
-        expect(calls.txHashHint?.chain).toBe(expectedChainEnums[chainName]);
+        expect(calls.data?.txHashHints?.[0]?.chain).toBe(expectedChainEnums[chainName]);
       }
     });
 
@@ -510,9 +497,239 @@ describe('ParallaxClient', () => {
 
       // Verify we can create a trace with each chain name without throwing
       for (const chainName of allChainNames) {
-        const trace = parallaxClient.trace('test').setTxHint('0x123', chainName);
+        const trace = parallaxClient.trace('test').addTxHint('0x123', chainName);
         expect(trace).toBeInstanceOf(ParallaxTrace);
       }
+    });
+  });
+
+  describe('stack trace features', () => {
+    it('should create trace with captureStackTrace option', async () => {
+      const mockResponse: apiGateway.CreateTraceResponse = {
+        status: {
+          code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
+          errorMessage: undefined
+        },
+        traceId: 'trace-with-stack',
+      };
+
+      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+
+      const traceId = await parallaxClient.trace('test', { captureStackTrace: true })
+        .create();
+
+      expect(traceId).toBe('trace-with-stack');
+
+      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      expect(calls.data?.attributes).toBeDefined();
+      expect(calls.data?.attributes?.length).toBeGreaterThan(0);
+
+      const attrs = calls.data?.attributes?.[0]?.attributes;
+      expect(attrs?.['source.stack_trace']).toBeDefined();
+      expect(attrs?.['source.file']).toBeDefined();
+      expect(attrs?.['source.line']).toBeDefined();
+      expect(attrs?.['source.function']).toBeDefined();
+
+      // Verify stack trace is valid JSON
+      const stackTrace = JSON.parse(attrs?.['source.stack_trace'] || '{}');
+      expect(stackTrace.frames).toBeInstanceOf(Array);
+      expect(stackTrace.raw).toBeDefined();
+    });
+
+    it('should create trace without stack trace when option is false', async () => {
+      const mockResponse: apiGateway.CreateTraceResponse = {
+        status: {
+          code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
+          errorMessage: undefined
+        },
+        traceId: 'trace-no-stack',
+      };
+
+      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+
+      await parallaxClient.trace('test', { captureStackTrace: false })
+        .create();
+
+      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      const attrs = calls.data?.attributes?.[0]?.attributes;
+
+      // Should not have stack trace attributes
+      expect(attrs?.['source.stack_trace']).toBeUndefined();
+    });
+
+    it('should add event with captureStackTrace option', async () => {
+      const mockResponse: apiGateway.CreateTraceResponse = {
+        status: {
+          code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
+          errorMessage: undefined
+        },
+        traceId: 'trace-event-stack',
+      };
+
+      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+
+      await parallaxClient.trace('test')
+        .addEvent('error_occurred', { code: 500 }, { captureStackTrace: true })
+        .create();
+
+      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      expect(calls.data?.events).toHaveLength(1);
+
+      const eventDetails = JSON.parse(calls.data?.events?.[0]?.details || '{}');
+      expect(eventDetails.code).toBe(500);
+      expect(eventDetails.stackTrace).toBeDefined();
+      expect(eventDetails.stackTrace.frames).toBeInstanceOf(Array);
+    });
+
+    it('should add event with string details and captureStackTrace', async () => {
+      const mockResponse: apiGateway.CreateTraceResponse = {
+        status: {
+          code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
+          errorMessage: undefined
+        },
+        traceId: 'trace-string-stack',
+      };
+
+      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+
+      await parallaxClient.trace('test')
+        .addEvent('message', 'Something happened', { captureStackTrace: true })
+        .create();
+
+      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      const eventDetails = JSON.parse(calls.data?.events?.[0]?.details || '{}');
+
+      expect(eventDetails.message).toBe('Something happened');
+      expect(eventDetails.stackTrace).toBeDefined();
+    });
+
+    it('should support legacy timestamp parameter for addEvent', async () => {
+      const mockResponse: apiGateway.CreateTraceResponse = {
+        status: {
+          code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
+          errorMessage: undefined
+        },
+        traceId: 'trace-legacy-timestamp',
+      };
+
+      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+
+      const customTimestamp = new Date('2024-01-15T10:00:00Z');
+
+      await parallaxClient.trace('test')
+        .addEvent('legacy_event', 'details', customTimestamp)
+        .create();
+
+      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      expect(calls.data?.events?.[0]?.timestamp).toEqual(customTimestamp);
+      expect(calls.data?.events?.[0]?.details).toBe('details');
+    });
+
+    it('should add stack trace via addStackTrace method', async () => {
+      const mockResponse: apiGateway.CreateTraceResponse = {
+        status: {
+          code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
+          errorMessage: undefined
+        },
+        traceId: 'trace-add-stack',
+      };
+
+      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+
+      await parallaxClient.trace('test')
+        .addStackTrace('checkpoint', { stage: 'validation' })
+        .create();
+
+      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      expect(calls.data?.events).toHaveLength(1);
+      expect(calls.data?.events?.[0]?.name).toBe('checkpoint');
+
+      const details = JSON.parse(calls.data?.events?.[0]?.details || '{}');
+      expect(details.stage).toBe('validation');
+      expect(details.stackTrace).toBeDefined();
+      expect(details.stackTrace.frames).toBeInstanceOf(Array);
+    });
+
+    it('should use default event name for addStackTrace', async () => {
+      const mockResponse: apiGateway.CreateTraceResponse = {
+        status: {
+          code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
+          errorMessage: undefined
+        },
+        traceId: 'trace-default-stack',
+      };
+
+      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+
+      await parallaxClient.trace('test')
+        .addStackTrace()
+        .create();
+
+      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      expect(calls.data?.events?.[0]?.name).toBe('stack_trace');
+    });
+
+    it('should add existing stack trace via addExistingStackTrace', async () => {
+      const mockResponse: apiGateway.CreateTraceResponse = {
+        status: {
+          code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
+          errorMessage: undefined
+        },
+        traceId: 'trace-existing-stack',
+      };
+
+      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+
+      // Capture a stack trace
+      const capturedStack = captureStackTrace();
+
+      await parallaxClient.trace('test')
+        .addExistingStackTrace(capturedStack, 'deferred_trace', { reason: 'async' })
+        .create();
+
+      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      expect(calls.data?.events).toHaveLength(1);
+      expect(calls.data?.events?.[0]?.name).toBe('deferred_trace');
+
+      const details = JSON.parse(calls.data?.events?.[0]?.details || '{}');
+      expect(details.reason).toBe('async');
+      expect(details.stackTrace.frames).toEqual(capturedStack.frames);
+      expect(details.stackTrace.raw).toBe(capturedStack.raw);
+    });
+
+    it('should ignore stack trace methods on closed trace', async () => {
+      const mockResponse: apiGateway.CreateTraceResponse = {
+        status: {
+          code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
+          errorMessage: undefined
+        },
+        traceId: 'trace-closed-stack',
+      };
+
+      // Mock both CreateTrace and CloseTrace
+      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+      (mockApiGatewayClient as jest.Mocked<apiGateway.ParallaxGatewayServiceClientImpl>).CloseTrace = jest.fn().mockResolvedValue({ accepted: true });
+
+      const trace = parallaxClient.trace('test');
+      await trace.create();
+      await trace.close();
+
+      // These should be ignored (trace is closed)
+      const mockStack: StackTrace = {
+        frames: [{ functionName: 'test', fileName: 'test.ts', lineNumber: 1, columnNumber: 1 }],
+        raw: 'test stack',
+      };
+
+      trace.addStackTrace('should_be_ignored');
+      trace.addExistingStackTrace(mockStack, 'also_ignored');
+
+      // Verify warnings were logged (uses console.warn)
+      expect(mockConsoleWarn).toHaveBeenCalledWith(
+        '[ParallaxTrace] Trace is closed, ignoring addStackTrace'
+      );
+      expect(mockConsoleWarn).toHaveBeenCalledWith(
+        '[ParallaxTrace] Trace is closed, ignoring addExistingStackTrace'
+      );
     });
   });
 
