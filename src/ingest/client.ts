@@ -1,5 +1,5 @@
 /**
- * ParallaxClient - Main client for interacting with the Parallax Gateway
+ * Client - Main client for interacting with the Mirador Ingest Gateway
  */
 import type {
   CreateTraceRequest,
@@ -10,31 +10,31 @@ import type {
   KeepAliveResponse,
   CloseTraceRequest,
   CloseTraceResponse,
-} from 'mirador-gateway-parallax/proto/gateway/parallax/v1/parallax_gateway';
-import { ParallaxGatewayServiceClientImpl } from 'mirador-gateway-parallax/proto/gateway/parallax/v1/parallax_gateway';
+} from 'mirador-gateway-ingest/proto/gateway/ingest/v1/ingest_gateway';
+import { IngestGatewayServiceClientImpl } from 'mirador-gateway-ingest/proto/gateway/ingest/v1/ingest_gateway';
 import { NodeGrpcRpc } from '../grpc';
-import { ParallaxTrace } from './trace';
-import type { ParallaxClientOptions, TraceOptions } from './types';
+import { Trace } from './trace';
+import type { ClientOptions, TraceOptions } from './types';
 
 // Default configuration values
-const DEFAULT_API_URL = 'parallax-gateway-dev.mirador.org:443';
+const DEFAULT_API_URL = 'ingest-gateway-dev.mirador.org:443';
 const DEFAULT_KEEP_ALIVE_INTERVAL_MS = 10000;
 
 /**
- * Main client for interacting with the Parallax Gateway API
+ * Main client for interacting with the Mirador Ingest Gateway API
  */
-export class ParallaxClient {
+export class Client {
   public apiUrl: string;
   public apiKey?: string;
   public keepAliveIntervalMs: number;
   private rpc: NodeGrpcRpc;
 
   /**
-   * Create a new ParallaxClient instance
-   * @param apiKey API key for authentication (sent as x-parallax-api-key header)
+   * Create a new Client instance
+   * @param apiKey API key for authentication (sent as x-ingest-api-key header)
    * @param options Optional configuration options
    */
-  constructor(apiKey?: string, options?: ParallaxClientOptions) {
+  constructor(apiKey?: string, options?: ClientOptions) {
     this.apiKey = apiKey;
     this.apiUrl = options?.apiUrl || DEFAULT_API_URL;
     this.keepAliveIntervalMs = options?.keepAliveIntervalMs || DEFAULT_KEEP_ALIVE_INTERVAL_MS;
@@ -46,7 +46,7 @@ export class ParallaxClient {
    * @internal
    */
   async _sendTrace(request: CreateTraceRequest): Promise<CreateTraceResponse> {
-    const client = new ParallaxGatewayServiceClientImpl(this.rpc);
+    const client = new IngestGatewayServiceClientImpl(this.rpc);
     return await client.CreateTrace(request);
   }
 
@@ -55,7 +55,7 @@ export class ParallaxClient {
    * @internal
    */
   async _updateTrace(request: UpdateTraceRequest): Promise<UpdateTraceResponse> {
-    const client = new ParallaxGatewayServiceClientImpl(this.rpc);
+    const client = new IngestGatewayServiceClientImpl(this.rpc);
     return await client.UpdateTrace(request);
   }
 
@@ -64,7 +64,7 @@ export class ParallaxClient {
    * @internal
    */
   async _keepAlive(request: KeepAliveRequest): Promise<KeepAliveResponse> {
-    const client = new ParallaxGatewayServiceClientImpl(this.rpc);
+    const client = new IngestGatewayServiceClientImpl(this.rpc);
     return await client.KeepAlive(request);
   }
 
@@ -73,7 +73,7 @@ export class ParallaxClient {
    * @internal
    */
   async _closeTrace(request: CloseTraceRequest): Promise<CloseTraceResponse> {
-    const client = new ParallaxGatewayServiceClientImpl(this.rpc);
+    const client = new IngestGatewayServiceClientImpl(this.rpc);
     return await client.CloseTrace(request);
   }
 
@@ -93,9 +93,9 @@ export class ParallaxClient {
    *
    * @param name Optional name of the trace (defaults to empty string)
    * @param options Optional trace options including captureStackTrace
-   * @returns A ParallaxTrace builder instance
+   * @returns A Trace builder instance
    */
-  trace(name: string = '', options?: TraceOptions): ParallaxTrace {
-    return new ParallaxTrace(this, name, options);
+  trace(name: string = '', options?: TraceOptions): Trace {
+    return new Trace(this, name, options);
   }
 }

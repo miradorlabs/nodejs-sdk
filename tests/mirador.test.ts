@@ -1,86 +1,89 @@
-// ParallaxClient Unit Tests
-import { ParallaxClient, ParallaxTrace, ChainName, captureStackTrace } from '../src/parallax';
-import type { StackTrace } from '../src/parallax';
+// Mirador Client Unit Tests
+import { Client, Trace, ChainName, captureStackTrace } from '../src/ingest';
+import type { StackTrace } from '../src/ingest';
 import { NodeGrpcRpc } from '../src/grpc';
-import * as apiGateway from "mirador-gateway-parallax/proto/gateway/parallax/v1/parallax_gateway";
-import { Chain } from "mirador-gateway-parallax/proto/gateway/parallax/v1/parallax_gateway";
-import { ResponseStatus_StatusCode } from "mirador-gateway-parallax/proto/common/v1/status";
+import * as apiGateway from "mirador-gateway-ingest/proto/gateway/ingest/v1/ingest_gateway";
+import { Chain } from "mirador-gateway-ingest/proto/gateway/ingest/v1/ingest_gateway";
+import { ResponseStatus_StatusCode } from "mirador-gateway-ingest/proto/gateway/common/v1/status";
 
 // Mock the NodeGrpcRpc class
 jest.mock('../src/grpc');
 
-// Mock console.log and console.warn to avoid cluttering test output
+// Mock console methods to avoid cluttering test output
 const mockConsoleLog = jest.spyOn(console, 'log').mockImplementation();
 const mockConsoleWarn = jest.spyOn(console, 'warn').mockImplementation();
+const mockConsoleError = jest.spyOn(console, 'error').mockImplementation();
 
-describe('ParallaxClient', () => {
-  let parallaxClient: ParallaxClient;
-  let mockApiGatewayClient: jest.Mocked<apiGateway.ParallaxGatewayServiceClientImpl>;
+describe('Client', () => {
+  let client: Client;
+  let mockApiGatewayClient: jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>;
 
   beforeEach(() => {
     // Clear all mocks before each test
     jest.clearAllMocks();
 
-    // Create a new ParallaxClient instance
-    parallaxClient = new ParallaxClient("test-api-key");
+    // Create a new Client instance
+    client = new Client("test-api-key");
 
-    // Create mock for ApiGatewayServiceClientImpl
+    // Create mock for IngestGatewayServiceClientImpl
     mockApiGatewayClient = {
       CreateTrace: jest.fn(),
-    } as unknown as jest.Mocked<apiGateway.ParallaxGatewayServiceClientImpl>;
+    } as unknown as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>;
 
-    // Mock the ParallaxGatewayServiceClientImpl constructor
+    // Mock the IngestGatewayServiceClientImpl constructor
     jest
-      .spyOn(apiGateway, "ParallaxGatewayServiceClientImpl")
+      .spyOn(apiGateway, "IngestGatewayServiceClientImpl")
       .mockImplementation(() => mockApiGatewayClient);
   });
 
   afterEach(() => {
     mockConsoleLog.mockClear();
     mockConsoleWarn.mockClear();
+    mockConsoleError.mockClear();
   });
 
   afterAll(() => {
     mockConsoleLog.mockRestore();
     mockConsoleWarn.mockRestore();
+    mockConsoleError.mockRestore();
   });
 
   describe('constructor', () => {
-    it('should create a ParallaxClient instance with API key', () => {
-      const client = new ParallaxClient('my-api-key');
-      expect(client).toBeInstanceOf(ParallaxClient);
-      expect(client.apiKey).toBe('my-api-key');
+    it('should create a Client instance with API key', () => {
+      const c = new Client('my-api-key');
+      expect(c).toBeInstanceOf(Client);
+      expect(c.apiKey).toBe('my-api-key');
     });
 
-    it('should create a ParallaxClient instance without API key', () => {
-      const client = new ParallaxClient();
-      expect(client).toBeInstanceOf(ParallaxClient);
-      expect(client.apiKey).toBeUndefined();
+    it('should create a Client instance without API key', () => {
+      const c = new Client();
+      expect(c).toBeInstanceOf(Client);
+      expect(c.apiKey).toBeUndefined();
     });
 
     it('should initialize NodeGrpcRpc with the correct URL and API key', () => {
       const apiKey = 'test-key';
-      new ParallaxClient(apiKey);
-      expect(NodeGrpcRpc).toHaveBeenCalledWith('parallax-gateway-dev.mirador.org:443', apiKey);
+      new Client(apiKey);
+      expect(NodeGrpcRpc).toHaveBeenCalledWith('ingest-gateway-dev.mirador.org:443', apiKey);
     });
 
     it('should use custom API URL if provided', () => {
       const apiKey = 'test-key';
       const customUrl = 'custom-gateway.example.com:50053';
-      new ParallaxClient(apiKey, { apiUrl: customUrl });
+      new Client(apiKey, { apiUrl: customUrl });
       expect(NodeGrpcRpc).toHaveBeenCalledWith(customUrl, apiKey);
     });
   });
 
-  describe('trace builder (ParallaxTrace)', () => {
+  describe('trace builder (Trace)', () => {
     it('should create a trace builder instance', () => {
-      const trace = parallaxClient.trace('test-trace');
-      expect(trace).toBeInstanceOf(ParallaxTrace);
+      const trace = client.trace('test-trace');
+      expect(trace).toBeInstanceOf(Trace);
     });
 
     it('should create a trace builder with empty name by default', () => {
-      const trace = parallaxClient.trace();
-      expect(trace).toBeInstanceOf(ParallaxTrace);
+      const trace = client.trace();
+      expect(trace).toBeInstanceOf(Trace);
     });
 
     it('should build and create a simple trace', async () => {
@@ -94,7 +97,7 @@ describe('ParallaxClient', () => {
 
       mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
 
-      const traceId = await parallaxClient.trace('swap_execution')
+      const traceId = await client.trace('swap_execution', { captureStackTrace: false })
         .addAttribute('user', '0xabc...')
         .addTag('dex')
         .create();
@@ -120,7 +123,7 @@ describe('ParallaxClient', () => {
 
       mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
 
-      await parallaxClient.trace('test')
+      await client.trace('test', { captureStackTrace: false })
         .addAttribute('stringValue', 'hello')
         .addAttribute('numberValue', 42)
         .addAttribute('booleanValue', true)
@@ -146,7 +149,7 @@ describe('ParallaxClient', () => {
 
       mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
 
-      await parallaxClient.trace('test')
+      await client.trace('test', { captureStackTrace: false })
         .addAttribute('metadata', { key: 'value', count: 42 })
         .addAttribute('nested', { a: { b: 'c' } })
         .create();
@@ -169,7 +172,7 @@ describe('ParallaxClient', () => {
 
       mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
 
-      await parallaxClient.trace('test')
+      await client.trace('test', { captureStackTrace: false })
         .addAttributes({
           user: '0xabc',
           slippage: 25,
@@ -198,7 +201,7 @@ describe('ParallaxClient', () => {
 
       mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
 
-      await parallaxClient.trace('test')
+      await client.trace('test')
         .addTag('tag1')
         .addTag('tag2')
         .addTags(['tag3', 'tag4'])
@@ -222,7 +225,7 @@ describe('ParallaxClient', () => {
       const timestamp1 = new Date('2024-01-01T00:00:00Z');
       const timestamp2 = new Date('2024-01-01T00:00:05Z');
 
-      await parallaxClient.trace('test')
+      await client.trace('test')
         .addEvent('event1', 'string details', timestamp1)
         .addEvent('event2', { key: 'value', count: 42 }, timestamp2)
         .addEvent('event3') // no details, auto timestamp
@@ -252,7 +255,7 @@ describe('ParallaxClient', () => {
 
       mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
 
-      await parallaxClient.trace('swap')
+      await client.trace('swap')
         .addTxHint('0x123...', 'ethereum', 'Swap transaction')
         .create();
 
@@ -277,7 +280,7 @@ describe('ParallaxClient', () => {
       mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
 
       // Test polygon
-      await parallaxClient.trace('test')
+      await client.trace('test')
         .addTxHint('0xpolygon...', 'polygon')
         .create();
 
@@ -286,7 +289,7 @@ describe('ParallaxClient', () => {
 
       // Test arbitrum
       mockApiGatewayClient.CreateTrace.mockClear();
-      await parallaxClient.trace('test')
+      await client.trace('test')
         .addTxHint('0xarbitrum...', 'arbitrum')
         .create();
 
@@ -295,7 +298,7 @@ describe('ParallaxClient', () => {
 
       // Test base
       mockApiGatewayClient.CreateTrace.mockClear();
-      await parallaxClient.trace('test')
+      await client.trace('test')
         .addTxHint('0xbase...', 'base')
         .create();
 
@@ -304,7 +307,7 @@ describe('ParallaxClient', () => {
 
       // Test optimism
       mockApiGatewayClient.CreateTrace.mockClear();
-      await parallaxClient.trace('test')
+      await client.trace('test')
         .addTxHint('0xoptimism...', 'optimism')
         .create();
 
@@ -313,7 +316,7 @@ describe('ParallaxClient', () => {
 
       // Test bsc
       mockApiGatewayClient.CreateTrace.mockClear();
-      await parallaxClient.trace('test')
+      await client.trace('test')
         .addTxHint('0xbsc...', 'bsc')
         .create();
 
@@ -332,7 +335,7 @@ describe('ParallaxClient', () => {
 
       mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
 
-      await parallaxClient.trace('test')
+      await client.trace('test')
         .addTag('no-tx')
         .create();
 
@@ -351,7 +354,7 @@ describe('ParallaxClient', () => {
 
       mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
 
-      const traceId = await parallaxClient.trace('swap_execution')
+      const traceId = await client.trace('swap_execution', { captureStackTrace: false })
         .addAttribute('user', '0xabc...')
         .addAttribute('slippage_bps', 25)
         .addAttribute('metadata', { version: '1.0' })
@@ -389,13 +392,13 @@ describe('ParallaxClient', () => {
 
       mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
 
-      const traceId = await parallaxClient.trace('test')
+      const traceId = await client.trace('test')
         .addTag('error-test')
         .create();
 
       expect(traceId).toBeUndefined();
-      expect(mockConsoleLog).toHaveBeenCalledWith(
-        '[ParallaxTrace] Error:',
+      expect(mockConsoleError).toHaveBeenCalledWith(
+        '[MiradorTrace] CreateTrace failed:',
         'Something went wrong'
       );
     });
@@ -404,13 +407,13 @@ describe('ParallaxClient', () => {
       const mockError = new Error('Network error');
       mockApiGatewayClient.CreateTrace.mockRejectedValue(mockError);
 
-      const traceId = await parallaxClient.trace('test')
+      const traceId = await client.trace('test')
         .addTag('exception-test')
         .create();
 
       expect(traceId).toBeUndefined();
-      expect(mockConsoleLog).toHaveBeenCalledWith(
-        '[ParallaxTrace] Error creating trace:',
+      expect(mockConsoleError).toHaveBeenCalledWith(
+        '[MiradorTrace] CreateTrace error:',
         mockError
       );
     });
@@ -438,11 +441,11 @@ describe('ParallaxClient', () => {
         .mockResolvedValueOnce(mockResponse1)
         .mockResolvedValueOnce(mockResponse2);
 
-      const trace1 = parallaxClient.trace('trace-1')
+      const trace1 = client.trace('trace-1')
         .addAttribute('id', '1')
         .addTag('first');
 
-      const trace2 = parallaxClient.trace('trace-2')
+      const trace2 = client.trace('trace-2')
         .addAttribute('id', '2')
         .addTag('second');
 
@@ -482,7 +485,7 @@ describe('ParallaxClient', () => {
       for (const chainName of chainNames) {
         mockApiGatewayClient.CreateTrace.mockClear();
 
-        await parallaxClient.trace('test')
+        await client.trace('test')
           .addTxHint('0x123', chainName)
           .create();
 
@@ -497,8 +500,8 @@ describe('ParallaxClient', () => {
 
       // Verify we can create a trace with each chain name without throwing
       for (const chainName of allChainNames) {
-        const trace = parallaxClient.trace('test').addTxHint('0x123', chainName);
-        expect(trace).toBeInstanceOf(ParallaxTrace);
+        const trace = client.trace('test').addTxHint('0x123', chainName);
+        expect(trace).toBeInstanceOf(Trace);
       }
     });
   });
@@ -515,7 +518,7 @@ describe('ParallaxClient', () => {
 
       mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
 
-      const traceId = await parallaxClient.trace('test', { captureStackTrace: true })
+      const traceId = await client.trace('test', { captureStackTrace: true })
         .create();
 
       expect(traceId).toBe('trace-with-stack');
@@ -547,7 +550,7 @@ describe('ParallaxClient', () => {
 
       mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
 
-      await parallaxClient.trace('test', { captureStackTrace: false })
+      await client.trace('test', { captureStackTrace: false })
         .create();
 
       const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
@@ -568,7 +571,7 @@ describe('ParallaxClient', () => {
 
       mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
 
-      await parallaxClient.trace('test')
+      await client.trace('test')
         .addEvent('error_occurred', { code: 500 }, { captureStackTrace: true })
         .create();
 
@@ -592,7 +595,7 @@ describe('ParallaxClient', () => {
 
       mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
 
-      await parallaxClient.trace('test')
+      await client.trace('test')
         .addEvent('message', 'Something happened', { captureStackTrace: true })
         .create();
 
@@ -616,7 +619,7 @@ describe('ParallaxClient', () => {
 
       const customTimestamp = new Date('2024-01-15T10:00:00Z');
 
-      await parallaxClient.trace('test')
+      await client.trace('test')
         .addEvent('legacy_event', 'details', customTimestamp)
         .create();
 
@@ -636,7 +639,7 @@ describe('ParallaxClient', () => {
 
       mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
 
-      await parallaxClient.trace('test')
+      await client.trace('test')
         .addStackTrace('checkpoint', { stage: 'validation' })
         .create();
 
@@ -661,7 +664,7 @@ describe('ParallaxClient', () => {
 
       mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
 
-      await parallaxClient.trace('test')
+      await client.trace('test')
         .addStackTrace()
         .create();
 
@@ -683,7 +686,7 @@ describe('ParallaxClient', () => {
       // Capture a stack trace
       const capturedStack = captureStackTrace();
 
-      await parallaxClient.trace('test')
+      await client.trace('test')
         .addExistingStackTrace(capturedStack, 'deferred_trace', { reason: 'async' })
         .create();
 
@@ -708,9 +711,9 @@ describe('ParallaxClient', () => {
 
       // Mock both CreateTrace and CloseTrace
       mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
-      (mockApiGatewayClient as jest.Mocked<apiGateway.ParallaxGatewayServiceClientImpl>).CloseTrace = jest.fn().mockResolvedValue({ accepted: true });
+      (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).CloseTrace = jest.fn().mockResolvedValue({ accepted: true });
 
-      const trace = parallaxClient.trace('test');
+      const trace = client.trace('test');
       await trace.create();
       await trace.close();
 
@@ -725,10 +728,10 @@ describe('ParallaxClient', () => {
 
       // Verify warnings were logged (uses console.warn)
       expect(mockConsoleWarn).toHaveBeenCalledWith(
-        '[ParallaxTrace] Trace is closed, ignoring addStackTrace'
+        '[MiradorTrace] Trace is closed. Ignoring addStackTrace call.'
       );
       expect(mockConsoleWarn).toHaveBeenCalledWith(
-        '[ParallaxTrace] Trace is closed, ignoring addExistingStackTrace'
+        '[MiradorTrace] Trace is closed. Ignoring addExistingStackTrace call.'
       );
     });
   });

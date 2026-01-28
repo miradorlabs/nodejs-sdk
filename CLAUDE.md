@@ -15,7 +15,7 @@ npm run lint         # Run ESLint on src/ and tests/
 npm test             # Run Jest tests
 npm run test:watch   # Run tests in watch mode
 npm run test:coverage # Run tests with coverage
-npm run cli          # Run CLI tool for testing (requires PARALLAX_API_KEY env var)
+npm run cli          # Run CLI tool for testing (requires MIRADOR_API_KEY env var)
 ./scripts/build.sh   # Full build pipeline: lint -> test -> build
 ./scripts/release.sh # Interactive release workflow
 ```
@@ -57,12 +57,12 @@ The SDK uses types from `mirador-gateway-parallax`:
 ### Configuration
 - Default API URL: `parallax-gateway-dev.mirador.org:443`
 - Environment variables:
-  - `PARALLAX_API_KEY` - API key for authentication
+  - `MIRADOR_API_KEY` - API key for authentication
   - `GRPC_BASE_URL_API` - Override default gateway URL
 
 ## Testing
 
-Tests are in `tests/` directory. The test suite mocks `NodeGrpcRpc` and the gateway client to test the `ParallaxClient` and `ParallaxTrace` builder logic.
+Tests are in `tests/` directory. The test suite mocks `NodeGrpcRpc` and the gateway client to test the `Client` and `Trace` builder logic.
 
 ```bash
 # Run a single test file

@@ -3,8 +3,8 @@ import {
   captureStackTrace,
   formatStackTrace,
   formatStackTraceReadable,
-} from '../src/parallax/stacktrace';
-import type { StackTrace } from '../src/parallax/types';
+} from '../src/ingest/stacktrace';
+import type { StackTrace } from '../src/ingest/types';
 
 describe('Stack Trace Utilities', () => {
   describe('captureStackTrace', () => {

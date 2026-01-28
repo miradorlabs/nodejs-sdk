@@ -5,6 +5,7 @@ const config: Config = {
   testEnvironment: 'node',
   roots: ['<rootDir>/tests', '<rootDir>/src'],
   testMatch: ['**/*.test.ts'],
+  forceExit: true,
   collectCoverageFrom: [
     'src/**/*.ts',
     '!src/**/*.d.ts',
@@ -19,7 +20,7 @@ const config: Config = {
     '^.+\\.tsx?$': 'ts-jest',
   },
   transformIgnorePatterns: [
-    'node_modules/(?!(mirador-gateway-parallax)/)'
+    'node_modules/(?!(mirador-gateway-ingest|@bufbuild/protobuf)/)'
   ],
 };
 

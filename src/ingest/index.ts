@@ -1,17 +1,17 @@
 /**
- * Parallax Node.js SDK
+ * Mirador Ingest Node.js SDK
  */
 
 // Classes
-export { ParallaxClient } from './client';
-export { ParallaxTrace } from './trace';
+export { Client } from './client';
+export { Trace } from './trace';
 
 // Stack trace utilities
 export { captureStackTrace, formatStackTrace, formatStackTraceReadable } from './stacktrace';
 
 // Types
 export type {
-  ParallaxClientOptions,
+  ClientOptions,
   ChainName,
   TraceEvent,
   TxHashHint,

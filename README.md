@@ -1,11 +1,11 @@
-# Parallax Node.js SDK
+# Mirador Ingest Node.js SDK
 
-Node.js SDK for the Parallax tracing platform. This package provides a server-side client using gRPC to interact with the Parallax Gateway API.
+Node.js SDK for the Mirador tracing platform. This package provides a server-side client using gRPC to interact with the Mirador Ingest Gateway API.
 
 ## Installation
 
 ```bash
-npm install @miradorlabs/parallax
+npm install @miradorlabs/node
 ```
 
 ## Features
@@ -21,10 +21,10 @@ npm install @miradorlabs/parallax
 ## Quick Start
 
 ```typescript
-import { ParallaxClient } from '@miradorlabs/parallax';
+import { Client } from '@miradorlabs/node';
 
 // Create client with optional keep-alive configuration
-const client = new ParallaxClient('your-api-key', {
+const client = new Client('your-api-key', {
   keepAliveIntervalMs: 10000  // Default is 10 seconds
 });
 
@@ -44,26 +44,26 @@ await trace.close('Transaction completed');
 
 ## API Reference
 
-### ParallaxClient
+### Client
 
-The main client for interacting with the Parallax Gateway.
+The main client for interacting with the Mirador Ingest Gateway.
 
 #### Constructor
 
 ```typescript
-new ParallaxClient(apiKey?: string, options?: ParallaxClientOptions)
+new Client(apiKey?: string, options?: ClientOptions)
 ```
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `apiKey` | `string` | No | API key for authentication (sent as `x-parallax-api-key` header) |
-| `options` | `ParallaxClientOptions` | No | Configuration options |
+| `apiKey` | `string` | No | API key for authentication (sent as `x-ingest-api-key` header) |
+| `options` | `ClientOptions` | No | Configuration options |
 
 #### Options
 
 ```typescript
-interface ParallaxClientOptions {
-  apiUrl?: string;              // Gateway URL (defaults to parallax-gateway-dev.mirador.org:443)
+interface ClientOptions {
+  apiUrl?: string;              // Gateway URL (defaults to ingest-gateway-dev.mirador.org:443)
   keepAliveIntervalMs?: number; // Keep-alive ping interval in milliseconds (default: 10000)
 }
 ```
@@ -78,8 +78,8 @@ Creates a new trace builder.
 const trace = client.trace('MyTrace');
 const trace = client.trace();  // name is optional (defaults to empty string)
 
-// With stack trace capture - records where in your code the trace was created
-const trace = client.trace('MyTrace', { captureStackTrace: true });
+// Stack trace capture is enabled by default - to disable:
+const trace = client.trace('MyTrace', { captureStackTrace: false });
 ```
 
 | Parameter | Type           | Required | Description                                   |
@@ -87,9 +87,9 @@ const trace = client.trace('MyTrace', { captureStackTrace: true });
 | `name`    | `string`       | No       | Name of the trace (defaults to empty string)  |
 | `options` | `TraceOptions` | No       | Trace options including `captureStackTrace`   |
 
-Returns: `ParallaxTrace` builder instance
+Returns: `Trace` builder instance
 
-### ParallaxTrace (Builder)
+### Trace (Builder)
 
 Fluent builder for constructing traces. All methods return `this` for chaining.
 
@@ -166,7 +166,7 @@ trace.addStackTrace('checkpoint', { stage: 'validation' })
 Add a previously captured stack trace as an event. Useful when you need to capture a stack trace at one point but record it later.
 
 ```typescript
-import { captureStackTrace } from '@miradorlabs/parallax';
+import { captureStackTrace } from '@miradorlabs/node';
 
 // Capture stack trace now
 const stack = captureStackTrace();
@@ -249,10 +249,10 @@ Returns: `boolean`
 ## Complete Example: Transaction Tracking
 
 ```typescript
-import { ParallaxClient } from '@miradorlabs/parallax';
+import { Client } from '@miradorlabs/node';
 
 // Create client with custom keep-alive interval (optional)
-const client = new ParallaxClient(process.env.PARALLAX_API_KEY, {
+const client = new Client(process.env.MIRADOR_API_KEY, {
   keepAliveIntervalMs: 15000  // Override default 10s interval
 });
 
@@ -302,7 +302,7 @@ async function trackSwapExecution(userAddress: string, txHash: string) {
 
 | Variable | Description |
 |----------|-------------|
-| `PARALLAX_API_KEY` | API key for authentication |
+| `MIRADOR_API_KEY` | API key for authentication |
 | `GRPC_BASE_URL_API` | Override gateway URL |
 
 ## Stack Trace Utilities
@@ -314,7 +314,7 @@ import {
   captureStackTrace,
   formatStackTrace,
   formatStackTraceReadable
-} from '@miradorlabs/parallax';
+} from '@miradorlabs/node';
 
 // Capture current stack trace
 const stack = captureStackTrace();
@@ -337,15 +337,15 @@ Full TypeScript support with exported types:
 
 ```typescript
 import {
-  ParallaxClient,
-  ParallaxTrace,
-  ParallaxClientOptions,
+  Client,
+  Trace,
+  ClientOptions,
   TraceOptions,      // { captureStackTrace?: boolean }
   AddEventOptions,   // { captureStackTrace?: boolean }
   StackFrame,        // { functionName, fileName, lineNumber, columnNumber }
   StackTrace,        // { frames: StackFrame[], raw: string }
   ChainName,         // 'ethereum' | 'polygon' | 'arbitrum' | 'base' | 'optimism' | 'bsc'
-} from '@miradorlabs/parallax';
+} from '@miradorlabs/node';
 ```
 
 ## Development

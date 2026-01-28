@@ -31,11 +31,9 @@ interface Rpc {
 
 export class NodeGrpcRpc implements Rpc {
   private client: grpc.Client;
-  private url: string;
   private apiKey?: string;
 
   constructor(url: string, apiKey?: string) {
-    this.url = url;
     this.apiKey = apiKey;
     // Create a single reusable client with connection pooling
     const credentials = grpc.ChannelCredentials.createSsl();
@@ -53,15 +51,11 @@ export class NodeGrpcRpc implements Rpc {
     metadata?: grpc.Metadata
   ): Promise<Uint8Array> {
     return new Promise((resolve, reject) => {
-      console.log(`[gRPC] Making request to ${this.url}/${service}/${method}`);
       const grpcMetadata = metadata || new grpc.Metadata();
 
       // Add API key to metadata if provided
       if (this.apiKey) {
-        console.log(`[gRPC] Adding X-Parallax-Api-Key header with API key: ${this.apiKey?.substring(0, 10)}...`);
-        grpcMetadata.add('x-parallax-api-key', this.apiKey);
-      } else {
-        console.log(`[gRPC] WARNING: No API key provided!`);
+        grpcMetadata.add('x-ingest-api-key', this.apiKey);
       }
 
       const deadline = new Date();
@@ -77,13 +71,8 @@ export class NodeGrpcRpc implements Rpc {
         { deadline },
         (err: grpc.ServiceError | null, value?: Buffer) => {
           if (err) {
-            console.error(
-              `[gRPC] Error from ${this.url}/${service}/${method}:`,
-              err.message
-            );
             reject(err);
           } else if (value) {
-            console.log(`[gRPC] Success from ${this.url}/${service}/${method}`);
             resolve(new Uint8Array(value));
           } else {
             reject(new Error("No response received"));
@@ -107,7 +96,7 @@ export class NodeGrpcRpc implements Rpc {
 
       // Add API key to metadata if provided
       if (this.apiKey) {
-        metadata.add('x-parallax-api-key', this.apiKey);
+        metadata.add('x-ingest-api-key', this.apiKey);
       }
 
       // Use the reusable client
