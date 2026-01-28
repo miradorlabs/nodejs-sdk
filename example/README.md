@@ -62,7 +62,7 @@ npm run cli -- submit
 
 ### Set API Key (Optional)
 ```bash
-export PARALLAX_API_KEY=your-api-key-here
+export MIRADOR_API_KEY=your-api-key-here
 ```
 
 ### Set Custom API URL (Optional)

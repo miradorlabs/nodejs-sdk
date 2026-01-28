@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * CLI tool for testing the Parallax SDK locally
+ * CLI tool for testing the Mirador Ingest SDK locally
  *
  * Usage:
  *   npm run cli                                    # Interactive demo
@@ -19,16 +19,16 @@
  */
 
 import 'dotenv/config';
-import { ParallaxClient, ParallaxTrace, ChainName, captureStackTrace } from '../src/parallax';
-import type { StackTrace } from '../src/parallax';
+import { Client, Trace, ChainName, captureStackTrace } from '../src/ingest';
+import type { StackTrace } from '../src/ingest';
 import * as readline from 'readline';
 
 // Configuration from environment variables
-const API_KEY = process.env.PARALLAX_API_KEY;
-const API_URL = process.env.GRPC_BASE_URL_API || 'parallax-gateway-dev.mirador.org:443';
+const API_KEY = process.env.MIRADOR_API_KEY;
+const API_URL = process.env.GRPC_BASE_URL_API || 'ingest-gateway-dev.mirador.org:443';
 
 // In-memory trace builder for command mode
-let currentTrace: ParallaxTrace | null = null;
+let currentTrace: Trace | null = null;
 let currentTraceName: string | null = null;
 
 // Colors for terminal output
@@ -70,7 +70,7 @@ function logWarning(message: string) {
 }
 
 // Initialize client
-const client = new ParallaxClient(API_KEY, { apiUrl: API_URL });
+const client = new Client(API_KEY, { apiUrl: API_URL });
 
 // Store captured stack traces for later use
 const capturedStackTraces: Map<string, StackTrace> = new Map();
@@ -327,7 +327,7 @@ async function interactiveMode() {
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
-    prompt: colors.cyan + 'parallax> ' + colors.reset,
+    prompt: colors.cyan + 'mirador> ' + colors.reset,
   });
 
   const showHelp = () => {
@@ -568,14 +568,14 @@ function showConfig() {
   logInfo(`API Key: ${API_KEY ? '***' + API_KEY.slice(-4) : 'Not set'}`);
 
   if (!API_KEY) {
-    logWarning('PARALLAX_API_KEY not set in environment');
-    logInfo('Set it with: export PARALLAX_API_KEY=your-key-here');
+    logWarning('MIRADOR_API_KEY not set in environment');
+    logInfo('Set it with: export MIRADOR_API_KEY=your-key-here');
   }
 }
 
 // Show usage
 function showUsage() {
-  logSection('Parallax SDK CLI - Usage');
+  logSection('Mirador Ingest SDK CLI - Usage');
 
   console.log(`
 ${colors.bright}Build a Trace:${colors.reset}
@@ -601,8 +601,8 @@ ${colors.bright}Demos & Modes:${colors.reset}
   ${colors.green}npm run cli -- help${colors.reset}                        Show this help
 
 ${colors.bright}Environment Variables:${colors.reset}
-  ${colors.cyan}PARALLAX_API_KEY${colors.reset}                Your Parallax API key
-  ${colors.cyan}GRPC_BASE_URL_API${colors.reset}               API URL (default: parallax-gateway-dev.mirador.org:443)
+  ${colors.cyan}MIRADOR_API_KEY${colors.reset}                 Your Mirador API key
+  ${colors.cyan}GRPC_BASE_URL_API${colors.reset}               API URL (default: ingest-gateway-dev.mirador.org:443)
 
 ${colors.bright}Example Workflow:${colors.reset}
   ${colors.yellow}# Create a trace${colors.reset}

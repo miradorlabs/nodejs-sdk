@@ -1,12 +1,12 @@
 /**
- * TypeScript interfaces for the Parallax SDK
+ * TypeScript interfaces for the Mirador Ingest SDK
  */
 
 /**
- * Options for ParallaxClient constructor
+ * Options for Client constructor
  */
-export interface ParallaxClientOptions {
-  /** Gateway URL (defaults to parallax-gateway-dev.mirador.org:443) */
+export interface ClientOptions {
+  /** Gateway URL (defaults to ingest-gateway-dev.mirador.org:443) */
   apiUrl?: string;
   /** Keep-alive ping interval in milliseconds (default: 10000) */
   keepAliveIntervalMs?: number;
@@ -75,4 +75,3 @@ export interface AddEventOptions {
   /** Capture stack trace at the point where addEvent is called */
   captureStackTrace?: boolean;
 }
-
