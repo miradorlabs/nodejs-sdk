@@ -17,7 +17,7 @@ import { Trace } from './trace';
 import type { ClientOptions, TraceOptions } from './types';
 
 // Default configuration values
-const DEFAULT_API_URL = 'ingest-gateway-dev.mirador.org:443';
+const DEFAULT_API_URL = 'ingest.mirador.org:443';
 const DEFAULT_KEEP_ALIVE_INTERVAL_MS = 10000;
 
 /**
