@@ -11,6 +11,7 @@ npm install @miradorlabs/node
 ## Features
 
 - **Fluent Builder Pattern** - Method chaining for creating traces
+- **Retry with Backoff** - Automatic retry with exponential backoff on network failures
 - **Keep-Alive** - Automatic periodic pings to maintain trace liveness (configurable interval)
 - **Trace Lifecycle** - Explicit close trace method with automatic cleanup
 - **Blockchain Integration** - Built-in support for correlating traces with blockchain transactions
@@ -28,7 +29,7 @@ const client = new Client('your-api-key', {
   keepAliveIntervalMs: 10000  // Default is 10 seconds
 });
 
-const trace = client.trace('SwapExecution')
+const trace = client.trace({ name: 'SwapExecution' })
   .addAttribute('from', '0xabc...')
   .addAttribute('slippage', { bps: 50, tolerance: 'auto' })  // objects are stringified
   .addTags(['dex', 'swap'])
@@ -63,29 +64,44 @@ new Client(apiKey?: string, options?: ClientOptions)
 
 ```typescript
 interface ClientOptions {
-  apiUrl?: string;              // Gateway URL (defaults to ingest-gateway-dev.mirador.org:443)
+  apiUrl?: string;              // Gateway URL (defaults to ingest.mirador.org:443)
   keepAliveIntervalMs?: number; // Keep-alive ping interval in milliseconds (default: 10000)
 }
 ```
 
 #### Methods
 
-##### `trace(name?, options?)`
+##### `trace(options?)`
 
 Creates a new trace builder.
 
 ```typescript
-const trace = client.trace('MyTrace');
-const trace = client.trace();  // name is optional (defaults to empty string)
+const trace = client.trace({ name: 'MyTrace' });
+const trace = client.trace();  // name is optional
 
 // Stack trace capture is enabled by default - to disable:
-const trace = client.trace('MyTrace', { captureStackTrace: false });
+const trace = client.trace({ name: 'MyTrace', captureStackTrace: false });
+
+// Configure retry behavior:
+const trace = client.trace({
+  name: 'MyTrace',
+  maxRetries: 5,      // Override default of 3
+  retryBackoff: 2000  // Override default of 1000ms
+});
 ```
 
-| Parameter | Type           | Required | Description                                   |
-|-----------|----------------|----------|-----------------------------------------------|
-| `name`    | `string`       | No       | Name of the trace (defaults to empty string)  |
-| `options` | `TraceOptions` | No       | Trace options including `captureStackTrace`   |
+| Parameter | Type           | Required | Description           |
+|-----------|----------------|----------|-----------------------|
+| `options` | `TraceOptions` | No       | Trace configuration   |
+
+```typescript
+interface TraceOptions {
+  name?: string;             // Trace name
+  captureStackTrace?: boolean; // Capture stack trace at creation (default: true)
+  maxRetries?: number;       // Max retry attempts on failure (default: 3)
+  retryBackoff?: number;     // Base backoff delay in ms (default: 1000)
+}
+```
 
 Returns: `Trace` builder instance
 
@@ -257,7 +273,7 @@ const client = new Client(process.env.MIRADOR_API_KEY, {
 });
 
 async function trackSwapExecution(userAddress: string, txHash: string) {
-  const trace = client.trace('SwapExecution')
+  const trace = client.trace({ name: 'SwapExecution' })
     .addAttribute('user', userAddress)
     .addAttribute('protocol', 'uniswap-v3')
     .addAttribute('tokenIn', 'ETH')
@@ -340,7 +356,7 @@ import {
   Client,
   Trace,
   ClientOptions,
-  TraceOptions,      // { captureStackTrace?: boolean }
+  TraceOptions,      // { name?, captureStackTrace?, maxRetries?, retryBackoff? }
   AddEventOptions,   // { captureStackTrace?: boolean }
   StackFrame,        // { functionName, fileName, lineNumber, columnNumber }
   StackTrace,        // { frames: StackFrame[], raw: string }

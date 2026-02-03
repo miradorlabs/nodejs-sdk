@@ -13,8 +13,17 @@ import type {
 } from 'mirador-gateway-ingest/proto/gateway/ingest/v1/ingest_gateway';
 import { Chain } from 'mirador-gateway-ingest/proto/gateway/ingest/v1/ingest_gateway';
 import { ResponseStatus_StatusCode } from 'mirador-gateway-ingest/proto/gateway/common/v1/status';
-import type { ChainName, TraceEvent, TxHashHint, TraceOptions, AddEventOptions, StackTrace } from './types';
+import type { ChainName, TraceEvent, TxHashHint, AddEventOptions, StackTrace } from './types';
 import { captureStackTrace, formatStackTrace } from './stacktrace';
+
+/** Options passed to Trace constructor (with defaults applied) */
+interface ResolvedTraceOptions {
+  name?: string;
+  captureStackTrace: boolean;
+  maxRetries: number;
+  retryBackoff: number;
+  keepAliveIntervalMs: number;
+}
 
 /**
  * Maps chain names to proto Chain enum values
@@ -33,7 +42,6 @@ const CHAIN_MAP: Record<ChainName, Chain> = {
  * @internal
  */
 export interface TraceSubmitter {
-  keepAliveIntervalMs: number;
   _sendTrace(request: CreateTraceRequest): Promise<CreateTraceResponse>;
   _updateTrace(request: UpdateTraceRequest): Promise<UpdateTraceResponse>;
   _keepAlive(request: KeepAliveRequest): Promise<KeepAliveResponse>;
@@ -44,7 +52,7 @@ export interface TraceSubmitter {
  * Builder class for constructing traces with method chaining
  */
 export class Trace {
-  private name: string;
+  private name?: string;
   private attributes: { [key: string]: string } = {};
   private tags: string[] = [];
   private events: TraceEvent[] = [];
@@ -56,14 +64,19 @@ export class Trace {
   private closed: boolean = false;
   private creationStackTrace: StackTrace | null = null;
 
-  constructor(client: TraceSubmitter, name: string = '', options?: TraceOptions) {
-    this.client = client;
-    this.name = name;
-    this.keepAliveIntervalMs = client.keepAliveIntervalMs;
+  // Retry configuration
+  private maxRetries: number;
+  private retryBackoff: number;
 
-    if (options?.captureStackTrace !== false) {
+  constructor(client: TraceSubmitter, options: ResolvedTraceOptions) {
+    this.client = client;
+    this.name = options.name;
+    this.keepAliveIntervalMs = options.keepAliveIntervalMs;
+    this.maxRetries = options.maxRetries;
+    this.retryBackoff = options.retryBackoff;
+
+    if (options.captureStackTrace) {
       // Skip 2 frames: this constructor and the trace() method that called it
-      // Captures by default unless explicitly disabled
       this.creationStackTrace = captureStackTrace(2);
     }
   }
@@ -267,6 +280,41 @@ export class Trace {
   }
 
   /**
+   * Sleep for the specified duration
+   */
+  private sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Execute an operation with exponential backoff retry
+   */
+  private async retryWithBackoff<T>(
+    operation: () => Promise<T>,
+    operationName: string
+  ): Promise<T> {
+    let lastError: Error | undefined;
+
+    for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
+      try {
+        return await operation();
+      } catch (err) {
+        lastError = err as Error;
+
+        if (attempt < this.maxRetries) {
+          const delay = this.retryBackoff * Math.pow(2, attempt);
+          console.warn(
+            `[MiradorTrace] ${operationName} failed, retrying in ${delay}ms (attempt ${attempt + 1}/${this.maxRetries})`
+          );
+          await this.sleep(delay);
+        }
+      }
+    }
+
+    throw lastError;
+  }
+
+  /**
    * Create and submit the trace to the gateway
    * @returns The trace ID if successful, undefined if failed
    */
@@ -313,7 +361,10 @@ export class Trace {
     };
 
     try {
-      const response = await this.client._sendTrace(request);
+      const response = await this.retryWithBackoff(
+        () => this.client._sendTrace(request),
+        'CreateTrace'
+      );
 
       if (response.status?.code !== ResponseStatus_StatusCode.STATUS_CODE_SUCCESS) {
         console.error('[MiradorTrace] CreateTrace failed:', response.status?.errorMessage || 'Unknown error');
@@ -329,7 +380,7 @@ export class Trace {
 
       return response.traceId;
     } catch (error) {
-      console.error('[MiradorTrace] CreateTrace error:', error);
+      console.error('[MiradorTrace] CreateTrace error after retries:', error);
       return undefined;
     }
   }

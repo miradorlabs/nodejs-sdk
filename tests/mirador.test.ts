@@ -64,7 +64,7 @@ describe('Client', () => {
     it('should initialize NodeGrpcRpc with the correct URL and API key', () => {
       const apiKey = 'test-key';
       new Client(apiKey);
-      expect(NodeGrpcRpc).toHaveBeenCalledWith('ingest-gateway-dev.mirador.org:443', apiKey);
+      expect(NodeGrpcRpc).toHaveBeenCalledWith('ingest.mirador.org:443', apiKey);
     });
 
     it('should use custom API URL if provided', () => {
@@ -77,7 +77,7 @@ describe('Client', () => {
 
   describe('trace builder (Trace)', () => {
     it('should create a trace builder instance', () => {
-      const trace = client.trace('test-trace');
+      const trace = client.trace({ name: 'test-trace' });
       expect(trace).toBeInstanceOf(Trace);
     });
 
@@ -97,7 +97,7 @@ describe('Client', () => {
 
       mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
 
-      const traceId = await client.trace('swap_execution', { captureStackTrace: false })
+      const traceId = await client.trace({ name: 'swap_execution', captureStackTrace: false })
         .addAttribute('user', '0xabc...')
         .addTag('dex')
         .create();
@@ -123,7 +123,7 @@ describe('Client', () => {
 
       mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
 
-      await client.trace('test', { captureStackTrace: false })
+      await client.trace({ name: 'test', captureStackTrace: false })
         .addAttribute('stringValue', 'hello')
         .addAttribute('numberValue', 42)
         .addAttribute('booleanValue', true)
@@ -149,7 +149,7 @@ describe('Client', () => {
 
       mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
 
-      await client.trace('test', { captureStackTrace: false })
+      await client.trace({ name: 'test', captureStackTrace: false })
         .addAttribute('metadata', { key: 'value', count: 42 })
         .addAttribute('nested', { a: { b: 'c' } })
         .create();
@@ -172,7 +172,7 @@ describe('Client', () => {
 
       mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
 
-      await client.trace('test', { captureStackTrace: false })
+      await client.trace({ name: 'test', captureStackTrace: false })
         .addAttributes({
           user: '0xabc',
           slippage: 25,
@@ -201,7 +201,7 @@ describe('Client', () => {
 
       mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
 
-      await client.trace('test')
+      await client.trace({ name: 'test' })
         .addTag('tag1')
         .addTag('tag2')
         .addTags(['tag3', 'tag4'])
@@ -225,7 +225,7 @@ describe('Client', () => {
       const timestamp1 = new Date('2024-01-01T00:00:00Z');
       const timestamp2 = new Date('2024-01-01T00:00:05Z');
 
-      await client.trace('test')
+      await client.trace({ name: 'test' })
         .addEvent('event1', 'string details', timestamp1)
         .addEvent('event2', { key: 'value', count: 42 }, timestamp2)
         .addEvent('event3') // no details, auto timestamp
@@ -255,7 +255,7 @@ describe('Client', () => {
 
       mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
 
-      await client.trace('swap')
+      await client.trace({ name: 'swap' })
         .addTxHint('0x123...', 'ethereum', 'Swap transaction')
         .create();
 
@@ -280,7 +280,7 @@ describe('Client', () => {
       mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
 
       // Test polygon
-      await client.trace('test')
+      await client.trace({ name: 'test' })
         .addTxHint('0xpolygon...', 'polygon')
         .create();
 
@@ -289,7 +289,7 @@ describe('Client', () => {
 
       // Test arbitrum
       mockApiGatewayClient.CreateTrace.mockClear();
-      await client.trace('test')
+      await client.trace({ name: 'test' })
         .addTxHint('0xarbitrum...', 'arbitrum')
         .create();
 
@@ -298,7 +298,7 @@ describe('Client', () => {
 
       // Test base
       mockApiGatewayClient.CreateTrace.mockClear();
-      await client.trace('test')
+      await client.trace({ name: 'test' })
         .addTxHint('0xbase...', 'base')
         .create();
 
@@ -307,7 +307,7 @@ describe('Client', () => {
 
       // Test optimism
       mockApiGatewayClient.CreateTrace.mockClear();
-      await client.trace('test')
+      await client.trace({ name: 'test' })
         .addTxHint('0xoptimism...', 'optimism')
         .create();
 
@@ -316,7 +316,7 @@ describe('Client', () => {
 
       // Test bsc
       mockApiGatewayClient.CreateTrace.mockClear();
-      await client.trace('test')
+      await client.trace({ name: 'test' })
         .addTxHint('0xbsc...', 'bsc')
         .create();
 
@@ -335,7 +335,7 @@ describe('Client', () => {
 
       mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
 
-      await client.trace('test')
+      await client.trace({ name: 'test' })
         .addTag('no-tx')
         .create();
 
@@ -354,7 +354,7 @@ describe('Client', () => {
 
       mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
 
-      const traceId = await client.trace('swap_execution', { captureStackTrace: false })
+      const traceId = await client.trace({ name: 'swap_execution', captureStackTrace: false })
         .addAttribute('user', '0xabc...')
         .addAttribute('slippage_bps', 25)
         .addAttribute('metadata', { version: '1.0' })
@@ -392,7 +392,7 @@ describe('Client', () => {
 
       mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
 
-      const traceId = await client.trace('test')
+      const traceId = await client.trace({ name: 'test' })
         .addTag('error-test')
         .create();
 
@@ -407,13 +407,13 @@ describe('Client', () => {
       const mockError = new Error('Network error');
       mockApiGatewayClient.CreateTrace.mockRejectedValue(mockError);
 
-      const traceId = await client.trace('test')
+      const traceId = await client.trace({ name: 'test' })
         .addTag('exception-test')
         .create();
 
       expect(traceId).toBeUndefined();
       expect(mockConsoleError).toHaveBeenCalledWith(
-        '[MiradorTrace] CreateTrace error:',
+        '[MiradorTrace] CreateTrace error after retries:',
         mockError
       );
     });
@@ -441,11 +441,11 @@ describe('Client', () => {
         .mockResolvedValueOnce(mockResponse1)
         .mockResolvedValueOnce(mockResponse2);
 
-      const trace1 = client.trace('trace-1')
+      const trace1 = client.trace({ name: 'trace-1' })
         .addAttribute('id', '1')
         .addTag('first');
 
-      const trace2 = client.trace('trace-2')
+      const trace2 = client.trace({ name: 'trace-2' })
         .addAttribute('id', '2')
         .addTag('second');
 
@@ -485,7 +485,7 @@ describe('Client', () => {
       for (const chainName of chainNames) {
         mockApiGatewayClient.CreateTrace.mockClear();
 
-        await client.trace('test')
+        await client.trace({ name: 'test' })
           .addTxHint('0x123', chainName)
           .create();
 
@@ -500,7 +500,7 @@ describe('Client', () => {
 
       // Verify we can create a trace with each chain name without throwing
       for (const chainName of allChainNames) {
-        const trace = client.trace('test').addTxHint('0x123', chainName);
+        const trace = client.trace({ name: 'test' }).addTxHint('0x123', chainName);
         expect(trace).toBeInstanceOf(Trace);
       }
     });
@@ -518,7 +518,7 @@ describe('Client', () => {
 
       mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
 
-      const traceId = await client.trace('test', { captureStackTrace: true })
+      const traceId = await client.trace({ name: 'test', captureStackTrace: true })
         .create();
 
       expect(traceId).toBe('trace-with-stack');
@@ -550,7 +550,7 @@ describe('Client', () => {
 
       mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
 
-      await client.trace('test', { captureStackTrace: false })
+      await client.trace({ name: 'test', captureStackTrace: false })
         .create();
 
       const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
@@ -571,7 +571,7 @@ describe('Client', () => {
 
       mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
 
-      await client.trace('test')
+      await client.trace({ name: 'test' })
         .addEvent('error_occurred', { code: 500 }, { captureStackTrace: true })
         .create();
 
@@ -595,7 +595,7 @@ describe('Client', () => {
 
       mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
 
-      await client.trace('test')
+      await client.trace({ name: 'test' })
         .addEvent('message', 'Something happened', { captureStackTrace: true })
         .create();
 
@@ -619,7 +619,7 @@ describe('Client', () => {
 
       const customTimestamp = new Date('2024-01-15T10:00:00Z');
 
-      await client.trace('test')
+      await client.trace({ name: 'test' })
         .addEvent('legacy_event', 'details', customTimestamp)
         .create();
 
@@ -639,7 +639,7 @@ describe('Client', () => {
 
       mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
 
-      await client.trace('test')
+      await client.trace({ name: 'test' })
         .addStackTrace('checkpoint', { stage: 'validation' })
         .create();
 
@@ -664,7 +664,7 @@ describe('Client', () => {
 
       mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
 
-      await client.trace('test')
+      await client.trace({ name: 'test' })
         .addStackTrace()
         .create();
 
@@ -686,7 +686,7 @@ describe('Client', () => {
       // Capture a stack trace
       const capturedStack = captureStackTrace();
 
-      await client.trace('test')
+      await client.trace({ name: 'test' })
         .addExistingStackTrace(capturedStack, 'deferred_trace', { reason: 'async' })
         .create();
 
@@ -713,7 +713,7 @@ describe('Client', () => {
       mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
       (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).CloseTrace = jest.fn().mockResolvedValue({ accepted: true });
 
-      const trace = client.trace('test');
+      const trace = client.trace({ name: 'test' });
       await trace.create();
       await trace.close();
 
