@@ -64,8 +64,14 @@ export interface StackTrace {
  * Options for creating a trace
  */
 export interface TraceOptions {
-  /** Capture stack trace at trace creation point */
+  /** Trace name */
+  name?: string;
+  /** Capture stack trace at trace creation point (default: true) */
   captureStackTrace?: boolean;
+  /** Maximum number of retry attempts on failure (default: 3) */
+  maxRetries?: number;
+  /** Base delay in ms for exponential backoff between retries (default: 1000) */
+  retryBackoff?: number;
 }
 
 /**
