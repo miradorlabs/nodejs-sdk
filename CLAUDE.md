@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-Parallax SDK is a TypeScript client library for interacting with the Mirador tracing platform. It provides APIs for creating traces with attributes, events, tags, and transaction hash hints, communicating over gRPC.
+Mirador SDK is a TypeScript client library for interacting with the Mirador tracing platform. It provides APIs for creating traces with attributes, events, tags, and transaction hash hints, communicating over gRPC.
 
 ## Build Commands
 
@@ -23,11 +23,11 @@ npm run cli          # Run CLI tool for testing (requires MIRADOR_API_KEY env va
 ## Architecture
 
 ### Entry Point
-- `index.ts` - Main export file that re-exports from `src/parallax` and gRPC types
+- `index.ts` - Main export file that re-exports from `src/ingest` and gRPC types
 
-### Source Structure (`src/parallax/`)
-- `client.ts` - `ParallaxClient` class for creating traces via gRPC
-- `trace.ts` - `ParallaxTrace` builder class for fluent API trace construction (includes internal `CHAIN_MAP` for converting chain names to proto enum values)
+### Source Structure (`src/ingest/`)
+- `client.ts` - `Client` class for creating traces via gRPC
+- `trace.ts` - `Trace` builder class for fluent API trace construction (includes internal `CHAIN_MAP` for converting chain names to proto enum values)
 - `types.ts` - Type definitions (`ChainName`, `TraceEvent`, `TxHashHint`)
 - `index.ts` - Re-exports all public APIs
 
@@ -35,7 +35,7 @@ npm run cli          # Run CLI tool for testing (requires MIRADOR_API_KEY env va
 - `index.ts` - `NodeGrpcRpc` class implementing gRPC transport with SSL and API key auth
 
 ### Proto Types
-The SDK uses types from `mirador-gateway-parallax`:
+The SDK uses types from `mirador-gateway-ingest`:
 - `CreateTraceRequest` / `CreateTraceResponse` - Main request/response types
 - `Event` - Event with `name`, `details`, and `timestamp` fields
 - `TxHashHint` - Transaction hint with `chain` (Chain enum), `txHash`, `details`, and `timestamp`
@@ -50,12 +50,12 @@ The SDK uses types from `mirador-gateway-parallax`:
 - Terminal method `create()` returns `Promise<string | undefined>` (trace ID or undefined on failure)
 
 ### External Dependencies
-- `mirador-gateway-parallax` - Protocol buffer definitions for the Parallax Gateway API
+- `mirador-gateway-ingest` - Protocol buffer definitions for the Mirador Gateway API
 - `@grpc/grpc-js` - gRPC client implementation
 - `rxjs` - Used for streaming support in gRPC layer
 
 ### Configuration
-- Default API URL: `parallax-gateway-dev.mirador.org:443`
+- Default API URL: `ingest-gateway-dev.mirador.org:443`
 - Environment variables:
   - `MIRADOR_API_KEY` - API key for authentication
   - `GRPC_BASE_URL_API` - Override default gateway URL
@@ -66,7 +66,7 @@ Tests are in `tests/` directory. The test suite mocks `NodeGrpcRpc` and the gate
 
 ```bash
 # Run a single test file
-npx jest tests/parallax.test.ts
+npx jest tests/mirador.test.ts
 
 # Run tests matching a pattern
 npx jest --testNamePattern="trace builder"

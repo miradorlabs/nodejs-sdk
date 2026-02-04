@@ -386,4 +386,4 @@ npm run release:major  # x.0.0
 
 ## License
 
-ISC
+MIT

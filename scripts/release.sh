@@ -10,7 +10,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 echo -e "${BLUE}========================================${NC}"
-echo -e "${BLUE}  Parallax Node.js SDK Release Script${NC}"
+echo -e "${BLUE}  Mirador Node.js SDK Release Script${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
 
