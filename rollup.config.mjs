@@ -27,7 +27,7 @@ export default [
     external: [
       '@grpc/grpc-js',
       'google-protobuf',
-      'mirador-gateway-parallax',
+      'mirador-gateway-ingest',
       'rxjs',
       /^rxjs\/.*/,
     ],
@@ -43,7 +43,7 @@ export default [
     external: [
       '@grpc/grpc-js',
       'google-protobuf',
-      'mirador-gateway-parallax',
+      'mirador-gateway-ingest',
       'rxjs',
       /^rxjs\/.*/,
     ],

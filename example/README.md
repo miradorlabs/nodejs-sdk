@@ -2,7 +2,7 @@
 
 ## ✅ CLI is Now Working!
 
-The Parallax SDK CLI has been successfully set up and is ready to use.
+The Mirador SDK CLI has been successfully set up and is ready to use.
 
 ## Installation Complete
 
@@ -33,14 +33,14 @@ npm run cli -- interactive
 
 Then try these commands:
 ```
-parallax> create test_trace
-parallax> attr user 0xabc123
-parallax> attr amount 100
-parallax> tag test
-parallax> event started
-parallax> status
-parallax> submit
-parallax> exit
+mirador> create test_trace
+mirador> attr user 0xabc123
+mirador> attr amount 100
+mirador> tag test
+mirador> event started
+mirador> status
+mirador> submit
+mirador> exit
 ```
 
 ### 3. Command-Line Mode
@@ -141,7 +141,7 @@ npm install
 
 ```
 example/cli.ts          # Main CLI entry point
-src/parallax/index.ts   # ParallaxClient and ParallaxTrace classes
+src/ingest/index.ts   # Client and Trace classes
 tsconfig.cli.json       # TypeScript config for CLI
 package.json            # npm scripts
 ```
@@ -160,4 +160,4 @@ package.json            # npm scripts
 | `builder` | `demo` | Builder demo |
 | `help` | `-h`, `--help` | Show help |
 
-Enjoy using the Parallax SDK CLI! 🚀
+Enjoy using the Mirador SDK CLI! 🚀
