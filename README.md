@@ -373,7 +373,6 @@ npm run lint         # Run linter
 npm test             # Run tests
 npm run test:watch   # Run tests in watch mode
 npm run test:coverage # Run tests with coverage
-npm run cli          # CLI tool for testing
 ```
 
 ### Release
@@ -383,6 +382,26 @@ npm run release:patch  # 1.0.x
 npm run release:minor  # 1.x.0
 npm run release:major  # x.0.0
 ```
+
+## Example CLI
+
+An interactive CLI for testing the SDK is available in the [`example/`](./example/) directory.
+
+```bash
+# Run the CLI
+npm run cli
+
+# Example session
+mirador> create my_swap
+mirador> attr user 0xabc123
+mirador> tag swap
+mirador> event wallet_connected '{"wallet":"MetaMask"}'
+mirador> tx 0x123... ethereum
+mirador> submit
+mirador> close "Completed"
+```
+
+See the [example README](./example/README.md) for full documentation.
 
 ## License
 
