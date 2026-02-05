@@ -1,163 +1,91 @@
-# CLI Quick Start
+# Mirador SDK CLI Example
 
-## ✅ CLI is Now Working!
+Interactive CLI for testing the Mirador Ingest SDK.
 
-The Mirador SDK CLI has been successfully set up and is ready to use.
+## Setup
 
-## Installation Complete
-
-The following has been installed:
-- ✅ `tsx` - TypeScript execution engine
-- ✅ CLI script at `example/cli.ts`
-- ✅ Custom commands for building traces
-- ✅ Interactive mode support
-
-## Quick Test
-
-Run the help command to verify installation:
 ```bash
-npm run cli -- help
+# From the nodejs-client directory
+npm install
+
+# Set your API key
+export MIRADOR_API_KEY=your-api-key
 ```
 
-## Usage Examples
+## Usage
 
-### 1. Builder Demo (Pre-built Example)
 ```bash
-npm run cli -- builder
+npm run cli
 ```
 
-### 2. Interactive Mode (Recommended for Testing)
-```bash
-npm run cli -- interactive
-```
+This starts an interactive session where you can build and submit traces.
 
-Then try these commands:
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `create <name>` | Create a new trace |
+| `attr <key> <value>` | Add an attribute |
+| `tag <name>` | Add a tag |
+| `event <name> [details]` | Add an event |
+| `tx <hash> <chain> [details]` | Add a transaction hint |
+| `submit` | Submit the trace to the server |
+| `close [reason]` | Close the trace |
+| `status` | Show current trace status |
+| `help` | Show available commands |
+| `exit` | Exit the CLI |
+
+## Example Session
+
 ```
-mirador> create test_trace
+$ npm run cli
+
+Mirador SDK CLI
+API: ingest-gateway-dev.mirador.org:443
+Key: ...abc1
+Type "help" for commands
+
+mirador> create my_swap
+✓ Created trace: my_swap
+
 mirador> attr user 0xabc123
+✓ Added attribute: user = 0xabc123
+
 mirador> attr amount 100
-mirador> tag test
-mirador> event started
-mirador> status
+✓ Added attribute: amount = 100
+
+mirador> tag swap
+✓ Added tag: swap
+
+mirador> event wallet_connected '{"wallet":"MetaMask"}'
+✓ Added event: wallet_connected (with details)
+
+mirador> tx 0x123abc... ethereum "Swap transaction"
+✓ Added tx hint: 0x123abc... on ethereum
+
 mirador> submit
+ℹ Submitting trace...
+✓ Trace submitted! ID: abc123-def456-...
+
+mirador> close "Completed successfully"
+✓ Trace closed: Completed successfully
+
 mirador> exit
+Goodbye!
 ```
 
-### 3. Command-Line Mode
-```bash
-# Create a trace
-npm run cli -- create my_trace
+## Supported Chains
 
-# Add data
-npm run cli -- add-attribute user 0xtest
-npm run cli -- add-attribute slippage 25
-npm run cli -- add-tag swap
-npm run cli -- add-event wallet_connected '{"wallet":"MetaMask"}'
-
-# Submit
-npm run cli -- submit
-```
+- ethereum
+- polygon
+- arbitrum
+- base
+- optimism
+- bsc
 
 ## Configuration
 
-### Set API Key (Optional)
-```bash
-export MIRADOR_API_KEY=your-api-key-here
-```
-
-### Set Custom API URL (Optional)
-```bash
-export GRPC_BASE_URL_API=your-gateway-url:443
-```
-
-## Available Commands
-
-### Trace Management
-- `create <name>` - Create a new trace
-- `submit` - Submit the current trace
-- `status` - Check current trace state
-
-### Adding Data
-- `add-attribute <key> <value>` - Add an attribute
-- `add-event <name> [details]` - Add an event
-- `add-tag <tag>` - Add a tag
-- `set-tx <hash> <chain> [details]` - Set transaction hash
-
-### Modes
-- `interactive` - Interactive REPL mode
-- `builder` - Pre-built demo
-- `help` - Show help
-
-## Features
-
-✅ **Color-Coded Output**
-- Green ✓ for success
-- Red ✗ for errors
-- Blue ℹ for info
-- Yellow ⚠️ for warnings
-
-✅ **Smart Type Parsing**
-- Numbers: `25` → number
-- Booleans: `true` → boolean
-- Strings: `0xabc` → string
-
-✅ **JSON Support**
-```bash
-npm run cli -- add-event test '{"key":"value","count":42}'
-```
-
-✅ **Stateful Sessions**
-Build traces incrementally across multiple commands
-
-## Troubleshooting
-
-### Connection Errors
-If you see "Name resolution failed" or "UNAVAILABLE" errors, this is expected when the API server isn't running locally. The CLI itself is working correctly.
-
-To test without a server:
-1. Use a mock/local server, or
-2. Verify the CLI commands work (they will fail at submit, which is expected)
-
-### Import Errors
-If you see "Cannot use import statement outside a module", make sure `tsx` is installed:
-```bash
-npm install --save-dev tsx
-```
-
-### TypeScript Errors
-Ensure TypeScript dependencies are installed:
-```bash
-npm install
-```
-
-## Next Steps
-
-1. **Test the CLI** - Run `npm run cli -- help`
-2. **Try Interactive Mode** - Run `npm run cli -- interactive`
-3. **Build a Trace** - Follow the examples above
-4. **Set Up API** - Configure your API key and URL for real testing
-
-## Architecture
-
-```
-example/cli.ts          # Main CLI entry point
-src/ingest/index.ts   # Client and Trace classes
-tsconfig.cli.json       # TypeScript config for CLI
-package.json            # npm scripts
-```
-
-## CLI Commands Reference
-
-| Command | Alias | Description |
-|---------|-------|-------------|
-| `create <name>` | - | Create new trace |
-| `add-attribute` | `attr` | Add attribute |
-| `add-event` | `event` | Add event |
-| `add-tag` | `tag` | Add tag |
-| `set-tx` | `tx` | Set transaction |
-| `submit` | - | Submit trace |
-| `interactive` | `i` | Interactive mode |
-| `builder` | `demo` | Builder demo |
-| `help` | `-h`, `--help` | Show help |
-
-Enjoy using the Mirador SDK CLI! 🚀
+| Environment Variable | Description | Default |
+|---------------------|-------------|---------|
+| `MIRADOR_API_KEY` | Your Mirador API key | - |
+| `GRPC_BASE_URL_API` | Gateway URL | `ingest-gateway-dev.mirador.org:443` |
