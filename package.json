@@ -8,7 +8,7 @@
     "registry": "https://registry.npmjs.org/"
   },
   "scripts": {
-    "prepare": "npm run build",
+    "prepare": "husky",
     "build": "rm -rf dist/ && rollup -c",
     "lint": "eslint src/ tests/",
     "lint:fix": "eslint src/ tests/ --fix",
@@ -32,6 +32,8 @@
   "license": "MIT",
   "description": "Mirador Ingest SDK for Node.js",
   "devDependencies": {
+    "@commitlint/cli": "^20.4.1",
+    "@commitlint/config-conventional": "^20.4.1",
     "@eslint/js": "^9.39.1",
     "@rollup/plugin-commonjs": "^29.0.0",
     "@rollup/plugin-node-resolve": "^16.0.3",
@@ -43,6 +45,7 @@
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.4",
     "globals": "^16.5.0",
+    "husky": "^9.1.7",
     "jest": "^30.2.0",
     "jiti": "^2.6.1",
     "prettier": "^3.6.2",

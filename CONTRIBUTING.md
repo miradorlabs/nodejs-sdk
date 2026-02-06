@@ -86,7 +86,25 @@ npm run cli
    - Follow the existing code style
    - Run linting before committing
 
-3. Run linting:
+3. Write commit messages following the [Conventional Commits](https://www.conventionalcommits.org/) format:
+
+   ```text
+   type(scope): description
+   ```
+
+   Common types: `feat`, `fix`, `chore`, `docs`, `style`, `refactor`, `test`, `ci`, `perf`, `build`
+
+   Examples:
+
+   ```text
+   feat: add retry logic to gRPC client
+   fix(grpc): handle null response from server
+   chore: update dependencies
+   ```
+
+   A commit-msg hook enforced by [commitlint](https://commitlint.js.org/) will reject non-conforming messages.
+
+4. Run linting:
    ```bash
    npm run lint        # Check for issues
    npm run lint:fix    # Auto-fix issues
