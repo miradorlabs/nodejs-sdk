@@ -1,10 +1,10 @@
-# Contributing to @miradorlabs/node
+# Contributing to @miradorlabs/nodejs-sdk
 
 Thank you for your interest in contributing to the Mirador Node.js SDK! This document provides guidelines and instructions for contributing.
 
 ## Table of Contents
 
-- [Contributing to @miradorlabs/node](#contributing-to-miradorlabsnode)
+- [Contributing to @miradorlabs/nodejs-sdk](#contributing-to-miradorlabsnodejs-sdk)
   - [Table of Contents](#table-of-contents)
   - [Code of Conduct](#code-of-conduct)
   - [Getting Started](#getting-started)
