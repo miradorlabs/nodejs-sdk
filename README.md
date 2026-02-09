@@ -5,7 +5,7 @@ Node.js SDK for the Mirador tracing platform. This package provides a server-sid
 ## Installation
 
 ```bash
-npm install @miradorlabs/node
+npm install @miradorlabs/nodejs-sdk
 ```
 
 ## Features
@@ -22,7 +22,7 @@ npm install @miradorlabs/node
 ## Quick Start
 
 ```typescript
-import { Client } from '@miradorlabs/node';
+import { Client } from '@miradorlabs/nodejs-sdk';
 
 // Create client with optional keep-alive configuration
 const client = new Client('your-api-key', {
@@ -182,7 +182,7 @@ trace.addStackTrace('checkpoint', { stage: 'validation' })
 Add a previously captured stack trace as an event. Useful when you need to capture a stack trace at one point but record it later.
 
 ```typescript
-import { captureStackTrace } from '@miradorlabs/node';
+import { captureStackTrace } from '@miradorlabs/nodejs-sdk';
 
 // Capture stack trace now
 const stack = captureStackTrace();
@@ -265,7 +265,7 @@ Returns: `boolean`
 ## Complete Example: Transaction Tracking
 
 ```typescript
-import { Client } from '@miradorlabs/node';
+import { Client } from '@miradorlabs/nodejs-sdk';
 
 // Create client with custom keep-alive interval (optional)
 const client = new Client(process.env.MIRADOR_API_KEY, {
@@ -330,7 +330,7 @@ import {
   captureStackTrace,
   formatStackTrace,
   formatStackTraceReadable
-} from '@miradorlabs/node';
+} from '@miradorlabs/nodejs-sdk';
 
 // Capture current stack trace
 const stack = captureStackTrace();
@@ -361,7 +361,7 @@ import {
   StackFrame,        // { functionName, fileName, lineNumber, columnNumber }
   StackTrace,        // { frames: StackFrame[], raw: string }
   ChainName,         // 'ethereum' | 'polygon' | 'arbitrum' | 'base' | 'optimism' | 'bsc'
-} from '@miradorlabs/node';
+} from '@miradorlabs/nodejs-sdk';
 ```
 
 ## Development
