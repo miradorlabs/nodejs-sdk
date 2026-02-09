@@ -16,7 +16,7 @@ jobs:
           webhook-type: incoming-webhook
           payload: |
             {
-              "text": "📬 New PR from ${{ github.event.pull_request.user.login }}",
+              "text": ${{ toJSON(format('📬 New PR from {0}: {1}', github.event.pull_request.user.login, github.event.pull_request.title)) }},
               "blocks": [
                 {
                   "type": "header",
@@ -38,7 +38,7 @@ jobs:
                     },
                     {
                       "type": "mrkdwn",
-                      "text": "*Title:*\n${{ github.event.pull_request.title }}"
+                      "text": ${{ toJSON(format('*Title:*\n{0}', github.event.pull_request.title)) }}
                     }
                   ]
                 },
