@@ -4,45 +4,25 @@ on:
   pull_request:
     types: [opened]
 
-env:
-  ORG_NAME: miradorlabs
-  TEAM_SLUG: dev
-
 jobs:
   notify:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Check team membership
-        id: membership
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          STATUS=$(gh api \
-            -H "Accept: application/vnd.github+json" \
-            "orgs/${{ env.ORG_NAME }}/teams/${{ env.TEAM_SLUG }}/memberships/${{ github.event.pull_request.user.login }}" \
-            --silent -i 2>/dev/null | head -1 | awk '{print $2}')
-          if [ "$STATUS" = "200" ]; then
-            echo "is_member=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "is_member=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Slack Notification - External PR
-        if: steps.membership.outputs.is_member == 'false'
+      - name: Slack Notification - New PR
         uses: slackapi/slack-github-action@v2.1.1
         with:
           webhook: ${{ secrets.SLACK_WEBHOOK_ACTIONS }}
           webhook-type: incoming-webhook
           payload: |
             {
-              "text": "📬 New PR from external contributor: ${{ github.event.pull_request.user.login }}",
+              "text": "📬 New PR from ${{ github.event.pull_request.user.login }}",
               "blocks": [
                 {
                   "type": "header",
                   "text": {
                     "type": "plain_text",
-                    "text": "📬 New PR from External Contributor"
+                    "text": "📬 New Pull Request"
                   }
                 },
                 {
