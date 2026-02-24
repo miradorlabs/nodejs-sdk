@@ -506,6 +506,87 @@ describe('Client', () => {
     });
   });
 
+  describe('addTxInputData', () => {
+    it('should add an event with the correct name and input data', async () => {
+      const mockResponse: apiGateway.CreateTraceResponse = {
+        status: {
+          code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
+          errorMessage: undefined
+        },
+        traceId: 'trace-tx-input',
+      };
+
+      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+
+      const inputData = '0xa9059cbb0000000000000000000000001234567890abcdef';
+
+      await client.trace({ name: 'test', captureStackTrace: false })
+        .addTxInputData(inputData)
+        .create();
+
+      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      const events = calls.data?.events;
+      expect(events).toHaveLength(1);
+      expect(events?.[0].name).toBe('Tx input data');
+      expect(events?.[0].details).toBe(inputData);
+      expect(events?.[0].timestamp).toBeInstanceOf(Date);
+    });
+
+    it('should return this for chaining', () => {
+      const trace = client.trace({ name: 'test' });
+      expect(trace.addTxInputData('0x1234')).toBe(trace);
+    });
+
+    it('should be ignored on a closed trace', async () => {
+      const mockResponse: apiGateway.CreateTraceResponse = {
+        status: {
+          code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
+          errorMessage: undefined
+        },
+        traceId: 'trace-closed-input',
+      };
+
+      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+      (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).CloseTrace = jest.fn().mockResolvedValue({ accepted: true });
+
+      const trace = client.trace({ name: 'test' });
+      await trace.create();
+      await trace.close();
+
+      trace.addTxInputData('0xdead');
+      expect(mockConsoleWarn).toHaveBeenCalledWith(
+        '[MiradorTrace] Trace is closed, ignoring addEvent'
+      );
+    });
+
+    it('should work alongside other builder methods', async () => {
+      const mockResponse: apiGateway.CreateTraceResponse = {
+        status: {
+          code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
+          errorMessage: undefined
+        },
+        traceId: 'trace-combined',
+      };
+
+      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+
+      await client.trace({ name: 'swap', captureStackTrace: false })
+        .addAttribute('user', '0xabc')
+        .addTxHint('0x123', 'ethereum')
+        .addTxInputData('0xa9059cbb00000000')
+        .addTag('bridge')
+        .create();
+
+      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      expect(calls.data?.attributes?.[0]?.attributes).toEqual({ user: '0xabc' });
+      expect(calls.data?.txHashHints).toHaveLength(1);
+      expect(calls.data?.events).toHaveLength(1);
+      expect(calls.data?.events?.[0].name).toBe('Tx input data');
+      expect(calls.data?.events?.[0].details).toBe('0xa9059cbb00000000');
+      expect(calls.data?.tags?.[0]?.tags).toEqual(['bridge']);
+    });
+  });
+
   describe('stack trace features', () => {
     it('should create trace with captureStackTrace option', async () => {
       const mockResponse: apiGateway.CreateTraceResponse = {
