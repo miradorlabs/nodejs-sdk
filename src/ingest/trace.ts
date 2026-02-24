@@ -286,7 +286,7 @@ export class Trace {
    * @returns This trace builder for chaining
    */
   addTxInputData(inputData: string): this {
-    return this.addEvent('Tx input data provided', inputData);
+    return this.addEvent('Tx input data', inputData);
   }
 
   /**
