@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.2.0](https://github.com/miradorlabs/nodejs-sdk/compare/v1.1.0...v1.2.0) (2026-02-25)
+
+
+### Features
+
+* add tx data capture, sendTransaction, and EIP-1193 provider ([1781e5f](https://github.com/miradorlabs/nodejs-sdk/commit/1781e5fc08b6aee32ddd00d0739e2421d08e2698))
+* guard addTxInputData for empty data ([3b71a88](https://github.com/miradorlabs/nodejs-sdk/commit/3b71a88df7a0ac626517dda0dc3a26cfd4a2d328))
+* tx metadata capture, sendTransaction, and EIP-1193 provider ([00f92d1](https://github.com/miradorlabs/nodejs-sdk/commit/00f92d11d26479caab6152d6d5dea6f8dfaf2c4f))
+
+
+### Bug Fixes
+
+* emit tx input data as event consistently ([6700f6a](https://github.com/miradorlabs/nodejs-sdk/commit/6700f6a24a81b628b6d93e48b59350326fee84f3))
+
 ## [1.1.0](https://github.com/miradorlabs/nodejs-sdk/compare/v1.0.0...v1.1.0) (2026-02-24)
 
 
