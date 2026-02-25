@@ -212,6 +212,20 @@ trace.addTxHint('0x123...', 'ethereum', 'Main transaction')
 | `chain` | `ChainName` | Chain name: `'ethereum'` \| `'polygon'` \| `'arbitrum'` \| `'base'` \| `'optimism'` \| `'bsc'` |
 | `details` | `string` | Optional details about the transaction |
 
+#### `addTxInputData(inputData)`
+
+Add transaction input data (calldata) as a trace event. This is the hex-encoded data field from a transaction, useful for debugging failed transactions where the calldata is still available even though the transaction reverted.
+
+```typescript
+trace.addTxInputData('0xa9059cbb000000000000000000000000...')
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `inputData` | `string` | Hex-encoded transaction input data (calldata) |
+
+Returns: `this` for chaining
+
 #### `create()`
 
 Submit the trace to the gateway. Keep-alive timer starts automatically after successful creation.
@@ -308,6 +322,100 @@ async function trackSwapExecution(userAddress: string, txHash: string) {
   } catch (error) {
     await trace.close('Transaction failed');
     throw error;
+  }
+}
+```
+
+## Tracing Transaction Input Data with ethers.js / viem
+
+When a transaction fails on-chain, the input data (calldata) still contains the encoded function call and parameters. Recording it with `addTxInputData()` lets you decode and debug the failure later in the Mirador dashboard.
+
+### Using ethers.js
+
+```typescript
+import { Client } from '@miradorlabs/nodejs-sdk';
+import { JsonRpcProvider, Wallet, parseEther } from 'ethers';
+
+const client = new Client(process.env.MIRADOR_API_KEY);
+const provider = new JsonRpcProvider(process.env.RPC_URL);
+const wallet = new Wallet(process.env.PRIVATE_KEY, provider);
+
+async function sendTracedTransaction() {
+  const trace = client.trace({ name: 'ServerSwap' })
+    .addAttribute('from', wallet.address)
+    .addTags(['swap', 'ethereum', 'server']);
+
+  try {
+    const tx = await wallet.sendTransaction({
+      to: '0xRouterAddress...',
+      data: '0x38ed1739000000000000000000000000...', // encoded swap calldata
+    });
+
+    trace.addEvent('transaction_sent', { txHash: tx.hash })
+         .addTxHint(tx.hash, 'ethereum')
+         .addTxInputData(tx.data);  // record the calldata for debugging
+
+    const traceId = await trace.create();
+    const receipt = await tx.wait();
+
+    trace.addEvent('transaction_confirmed', { blockNumber: receipt.blockNumber });
+    await trace.close('Swap completed');
+  } catch (error) {
+    trace.addEvent('transaction_failed', { error: error.message });
+    await trace.create();
+    await trace.close('Swap failed');
+  }
+}
+```
+
+### Using viem
+
+```typescript
+import { Client } from '@miradorlabs/nodejs-sdk';
+import { createWalletClient, createPublicClient, http } from 'viem';
+import { mainnet } from 'viem/chains';
+import { privateKeyToAccount } from 'viem/accounts';
+
+const client = new Client(process.env.MIRADOR_API_KEY);
+const account = privateKeyToAccount(process.env.PRIVATE_KEY as `0x${string}`);
+
+const walletClient = createWalletClient({
+  account,
+  chain: mainnet,
+  transport: http(process.env.RPC_URL),
+});
+
+const publicClient = createPublicClient({
+  chain: mainnet,
+  transport: http(process.env.RPC_URL),
+});
+
+async function sendTracedTransaction() {
+  const calldata = '0xa9059cbb000000000000000000000000...' as `0x${string}`;
+
+  const trace = client.trace({ name: 'TokenTransfer' })
+    .addAttribute('from', account.address)
+    .addTags(['transfer', 'ethereum']);
+
+  try {
+    const hash = await walletClient.sendTransaction({
+      to: '0xTokenAddress...' as `0x${string}`,
+      data: calldata,
+    });
+
+    trace.addEvent('transaction_sent', { txHash: hash })
+         .addTxHint(hash, 'ethereum')
+         .addTxInputData(calldata);  // record the calldata for debugging
+
+    const traceId = await trace.create();
+    const receipt = await publicClient.waitForTransactionReceipt({ hash });
+
+    trace.addEvent('transaction_confirmed', { blockNumber: Number(receipt.blockNumber) });
+    await trace.close('Transfer completed');
+  } catch (error) {
+    trace.addEvent('transaction_failed', { error: error.message });
+    await trace.create();
+    await trace.close('Transfer failed');
   }
 }
 ```
