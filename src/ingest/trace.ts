@@ -332,6 +332,7 @@ export class Trace {
    * @returns This trace builder for chaining
    */
   addTxInputData(inputData: string): this {
+    if (!inputData || inputData === '0x') return this;
     return this.addEvent('Tx input data', inputData);
   }
 
