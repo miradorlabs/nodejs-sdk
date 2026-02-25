@@ -13,8 +13,9 @@ import type {
 } from 'mirador-gateway-ingest/proto/gateway/ingest/v1/ingest_gateway';
 import { Chain } from 'mirador-gateway-ingest/proto/gateway/ingest/v1/ingest_gateway';
 import { ResponseStatus_StatusCode } from 'mirador-gateway-ingest/proto/gateway/common/v1/status';
-import type { ChainName, TraceEvent, TxHashHint, AddEventOptions, StackTrace } from './types';
+import type { ChainName, TraceEvent, TxHashHint, AddEventOptions, StackTrace, EIP1193Provider, TxHintOptions, TransactionLike, TransactionRequest } from './types';
 import { captureStackTrace, formatStackTrace } from './stacktrace';
+import { chainIdToName } from './chains';
 
 /** Options passed to Trace constructor (with defaults applied) */
 interface ResolvedTraceOptions {
@@ -23,6 +24,32 @@ interface ResolvedTraceOptions {
   maxRetries: number;
   retryBackoff: number;
   keepAliveIntervalMs: number;
+  provider?: EIP1193Provider;
+}
+
+/**
+ * Serialize transaction params for EIP-1193, converting bigints to hex strings
+ */
+function serializeTxParams(tx: TransactionRequest): Record<string, string | undefined> {
+  const toHex = (val: string | bigint | number | undefined): string | undefined => {
+    if (val === undefined) return undefined;
+    if (typeof val === 'bigint') return '0x' + val.toString(16);
+    if (typeof val === 'number') return '0x' + val.toString(16);
+    return String(val);
+  };
+
+  return {
+    from: tx.from,
+    to: tx.to,
+    data: tx.data,
+    value: toHex(tx.value),
+    gas: toHex(tx.gas),
+    gasPrice: toHex(tx.gasPrice),
+    maxFeePerGas: toHex(tx.maxFeePerGas),
+    maxPriorityFeePerGas: toHex(tx.maxPriorityFeePerGas),
+    nonce: toHex(tx.nonce),
+    chainId: toHex(tx.chainId),
+  };
 }
 
 /**
@@ -68,12 +95,20 @@ export class Trace {
   private maxRetries: number;
   private retryBackoff: number;
 
+  // Provider configuration
+  private provider: EIP1193Provider | null = null;
+  private providerChainName: ChainName | null = null;
+
   constructor(client: TraceSubmitter, options: ResolvedTraceOptions) {
     this.client = client;
     this.name = options.name;
     this.keepAliveIntervalMs = options.keepAliveIntervalMs;
     this.maxRetries = options.maxRetries;
     this.retryBackoff = options.retryBackoff;
+
+    if (options.provider) {
+      this.setProvider(options.provider);
+    }
 
     if (options.captureStackTrace) {
       // Skip 2 frames: this constructor and the trace() method that called it
@@ -262,14 +297,27 @@ export class Trace {
    * Add a transaction hash hint for blockchain correlation
    * @param txHash Transaction hash
    * @param chain Chain name (e.g., "ethereum", "polygon", "base")
-   * @param details Optional details about the transaction
+   * @param options Optional details string or TxHintOptions object
    * @returns This trace builder for chaining
    */
-  addTxHint(txHash: string, chain: ChainName, details?: string): this {
+  addTxHint(txHash: string, chain: ChainName, options?: string | TxHintOptions): this {
     if (this.closed) {
       console.warn('[MiradorTrace] Trace is closed, ignoring addTxHint');
       return this;
     }
+
+    let details: string | undefined;
+    if (typeof options === 'string') {
+      details = options;
+    } else if (options) {
+      if (options.input || options.details) {
+        details = JSON.stringify({
+          ...(options.input ? { input: options.input } : {}),
+          ...(options.details ? { details: options.details } : {}),
+        });
+      }
+    }
+
     this.txHashHints.push({
       txHash,
       chain,
@@ -287,6 +335,102 @@ export class Trace {
    */
   addTxInputData(inputData: string): this {
     return this.addEvent('Tx input data', inputData);
+  }
+
+  /**
+   * Add a transaction object, extracting hash, chain, and input data automatically.
+   * @param tx A transaction-like object (ethers, viem, or raw RPC format)
+   * @param chain Optional chain name override (inferred from tx.chainId if not provided)
+   * @returns This trace builder for chaining
+   */
+  addTx(tx: TransactionLike, chain?: ChainName): this {
+    if (this.closed) {
+      console.warn('[MiradorTrace] Trace is closed, ignoring addTx');
+      return this;
+    }
+
+    const resolvedChain = this.resolveChain(chain, tx.chainId);
+    const input = tx.data ?? tx.input;
+
+    this.addTxHint(tx.hash, resolvedChain, input ? { input } : undefined);
+    return this;
+  }
+
+  /**
+   * Set an EIP-1193 provider for transaction operations.
+   * Also initiates async chain ID detection.
+   * @param provider An EIP-1193 compatible provider
+   * @returns This trace builder for chaining
+   */
+  setProvider(provider: EIP1193Provider): this {
+    this.provider = provider;
+    provider.request({ method: 'eth_chainId' }).then((chainId) => {
+      this.providerChainName = chainIdToName(Number(chainId as string)) ?? null;
+    }).catch(() => { /* ignore */ });
+    return this;
+  }
+
+  /**
+   * Get the cached provider chain name
+   * @returns The provider's chain name or null if not available
+   */
+  getProviderChain(): ChainName | null {
+    return this.providerChainName;
+  }
+
+  /**
+   * Resolve chain name from explicit parameter, chainId, or provider cache.
+   * @param chain Explicit chain name
+   * @param chainId Chain ID from transaction
+   * @returns Resolved ChainName
+   * @throws If chain cannot be determined
+   */
+  resolveChain(chain?: ChainName, chainId?: number | bigint | string): ChainName {
+    if (chain) return chain;
+    if (chainId !== undefined) {
+      const resolved = chainIdToName(chainId);
+      if (resolved) return resolved;
+    }
+    if (this.providerChainName) return this.providerChainName;
+    throw new Error('[MiradorTrace] Cannot determine chain. Provide chain parameter, chainId, or set a provider.');
+  }
+
+  /**
+   * Send a transaction through the trace, capturing events and errors.
+   * @param tx Transaction parameters (EIP-1193 style)
+   * @param provider Optional provider override
+   * @returns The transaction hash
+   */
+  async sendTransaction(tx: TransactionRequest, provider?: EIP1193Provider): Promise<string> {
+    const p = provider ?? this.provider;
+    if (!p) throw new Error('[MiradorTrace] No provider configured. Use setProvider() or pass a provider.');
+
+    this.addEvent('tx:send', {
+      to: tx.to,
+      value: tx.value?.toString(),
+      data: tx.data ? `${tx.data.slice(0, 10)}...` : undefined,
+    });
+
+    try {
+      const txHash = await p.request({
+        method: 'eth_sendTransaction',
+        params: [serializeTxParams(tx)],
+      }) as string;
+
+      const chain = this.resolveChain(undefined, tx.chainId);
+      this.addTxHint(txHash, chain, { input: tx.data });
+      this.addEvent('tx:sent', { txHash });
+
+      return txHash;
+    } catch (err) {
+      const error = err as Error & { code?: unknown; data?: unknown };
+      this.addEvent('tx:error', {
+        message: error.message,
+        code: error.code,
+        data: error.data,
+      });
+      throw err;
+    }
   }
 
   /**

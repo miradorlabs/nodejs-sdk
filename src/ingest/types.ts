@@ -2,6 +2,49 @@
  * TypeScript interfaces for the Mirador Ingest SDK
  */
 
+/** EIP-1193 compatible provider interface */
+export interface EIP1193Provider {
+  request(args: { method: string; params?: unknown[] }): Promise<unknown>;
+}
+
+/** Options for addTxHint (extends current string details) */
+export interface TxHintOptions {
+  /** Transaction input data / calldata */
+  input?: string;
+  /** Additional details string */
+  details?: string;
+}
+
+/** A transaction-like object (matches ethers/viem/raw RPC response shapes) */
+export interface TransactionLike {
+  hash: string;
+  data?: string;
+  input?: string;
+  chainId?: number | bigint | string;
+}
+
+/** Transaction parameters for sendTransaction (EIP-1193 style) */
+export interface TransactionRequest {
+  from: string;
+  to?: string;
+  data?: string;
+  value?: string | bigint;
+  gas?: string | bigint;
+  gasPrice?: string | bigint;
+  maxFeePerGas?: string | bigint;
+  maxPriorityFeePerGas?: string | bigint;
+  nonce?: number | string;
+  chainId?: number | string;
+}
+
+/** Options for the MiradorProvider wrapper */
+export interface MiradorProviderOptions {
+  /** Bind to an existing trace instead of auto-creating per tx */
+  trace?: unknown;
+  /** Trace options for auto-created traces (ignored if trace is provided) */
+  traceOptions?: TraceOptions;
+}
+
 /**
  * Options for Client constructor
  */
@@ -10,6 +53,8 @@ export interface ClientOptions {
   apiUrl?: string;
   /** Keep-alive ping interval in milliseconds (default: 10000) */
   keepAliveIntervalMs?: number;
+  /** EIP-1193 provider to use for transaction operations */
+  provider?: EIP1193Provider;
 }
 
 /**
@@ -72,6 +117,8 @@ export interface TraceOptions {
   maxRetries?: number;
   /** Base delay in ms for exponential backoff between retries (default: 1000) */
   retryBackoff?: number;
+  /** EIP-1193 provider to use for transaction operations */
+  provider?: EIP1193Provider;
 }
 
 /**

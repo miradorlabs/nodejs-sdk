@@ -1,6 +1,6 @@
 // Mirador Client Unit Tests
-import { Client, Trace, ChainName, captureStackTrace } from '../src/ingest';
-import type { StackTrace } from '../src/ingest';
+import { Client, Trace, ChainName, captureStackTrace, chainIdToName, MiradorProvider } from '../src/ingest';
+import type { StackTrace, EIP1193Provider } from '../src/ingest';
 import { NodeGrpcRpc } from '../src/grpc';
 import * as apiGateway from "mirador-gateway-ingest/proto/gateway/ingest/v1/ingest_gateway";
 import { Chain } from "mirador-gateway-ingest/proto/gateway/ingest/v1/ingest_gateway";
@@ -817,4 +817,886 @@ describe('Client', () => {
     });
   });
 
+  describe('addTxHint with TxHintOptions', () => {
+    it('should accept string details (backwards compatible)', async () => {
+      const mockResponse: apiGateway.CreateTraceResponse = {
+        status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
+        traceId: 'trace-hint-string',
+      };
+      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+
+      await client.trace({ name: 'test', captureStackTrace: false })
+        .addTxHint('0xabc', 'ethereum', 'simple string')
+        .create();
+
+      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      expect(calls.data?.txHashHints?.[0]?.details).toBe('simple string');
+    });
+
+    it('should accept TxHintOptions with input', async () => {
+      const mockResponse: apiGateway.CreateTraceResponse = {
+        status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
+        traceId: 'trace-hint-options',
+      };
+      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+
+      await client.trace({ name: 'test', captureStackTrace: false })
+        .addTxHint('0xabc', 'ethereum', { input: '0xa9059cbb...' })
+        .create();
+
+      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      const details = JSON.parse(calls.data?.txHashHints?.[0]?.details || '{}');
+      expect(details.input).toBe('0xa9059cbb...');
+    });
+
+    it('should accept TxHintOptions with input and details', async () => {
+      const mockResponse: apiGateway.CreateTraceResponse = {
+        status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
+        traceId: 'trace-hint-both',
+      };
+      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+
+      await client.trace({ name: 'test', captureStackTrace: false })
+        .addTxHint('0xabc', 'ethereum', { input: '0xa9059cbb...', details: 'swap' })
+        .create();
+
+      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      const details = JSON.parse(calls.data?.txHashHints?.[0]?.details || '{}');
+      expect(details.input).toBe('0xa9059cbb...');
+      expect(details.details).toBe('swap');
+    });
+  });
+
+  describe('addTx', () => {
+    it('should extract hash and chain from TransactionLike', async () => {
+      const mockResponse: apiGateway.CreateTraceResponse = {
+        status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
+        traceId: 'trace-addtx',
+      };
+      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+
+      await client.trace({ name: 'test', captureStackTrace: false })
+        .addTx({ hash: '0xabc', chainId: 1 })
+        .create();
+
+      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      expect(calls.data?.txHashHints?.[0]?.txHash).toBe('0xabc');
+      expect(calls.data?.txHashHints?.[0]?.chain).toBe(Chain.CHAIN_ETHEREUM);
+    });
+
+    it('should extract input data from tx.data', async () => {
+      const mockResponse: apiGateway.CreateTraceResponse = {
+        status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
+        traceId: 'trace-addtx-data',
+      };
+      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+
+      await client.trace({ name: 'test', captureStackTrace: false })
+        .addTx({ hash: '0xabc', chainId: 1, data: '0xa9059cbb...' })
+        .create();
+
+      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      const details = JSON.parse(calls.data?.txHashHints?.[0]?.details || '{}');
+      expect(details.input).toBe('0xa9059cbb...');
+    });
+
+    it('should extract input data from tx.input', async () => {
+      const mockResponse: apiGateway.CreateTraceResponse = {
+        status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
+        traceId: 'trace-addtx-input',
+      };
+      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+
+      await client.trace({ name: 'test', captureStackTrace: false })
+        .addTx({ hash: '0xabc', chainId: 137, input: '0xdeadbeef' })
+        .create();
+
+      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      expect(calls.data?.txHashHints?.[0]?.chain).toBe(Chain.CHAIN_POLYGON);
+      const details = JSON.parse(calls.data?.txHashHints?.[0]?.details || '{}');
+      expect(details.input).toBe('0xdeadbeef');
+    });
+
+    it('should accept explicit chain parameter over chainId', async () => {
+      const mockResponse: apiGateway.CreateTraceResponse = {
+        status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
+        traceId: 'trace-addtx-chain',
+      };
+      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+
+      await client.trace({ name: 'test', captureStackTrace: false })
+        .addTx({ hash: '0xabc', chainId: 1 }, 'polygon')
+        .create();
+
+      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      expect(calls.data?.txHashHints?.[0]?.chain).toBe(Chain.CHAIN_POLYGON);
+    });
+
+    it('should return this for chaining', () => {
+      const trace = client.trace({ name: 'test' });
+      expect(trace.addTx({ hash: '0xabc', chainId: 1 })).toBe(trace);
+    });
+  });
+
+  describe('setProvider and sendTransaction', () => {
+    let mockProvider: EIP1193Provider;
+
+    beforeEach(() => {
+      mockProvider = {
+        request: jest.fn().mockImplementation(async (args: { method: string }) => {
+          if (args.method === 'eth_chainId') return '0x1';
+          if (args.method === 'eth_sendTransaction') return '0xtxhash123';
+          return null;
+        }),
+      };
+    });
+
+    it('setProvider should return this for chaining', () => {
+      const trace = client.trace({ name: 'test' });
+      expect(trace.setProvider(mockProvider)).toBe(trace);
+    });
+
+    it('setProvider should cache chain ID from provider', async () => {
+      const trace = client.trace({ name: 'test' });
+      trace.setProvider(mockProvider);
+      await new Promise(r => setTimeout(r, 0));
+      expect(trace.getProviderChain()).toBe('ethereum');
+    });
+
+    it('sendTransaction should send tx and return hash', async () => {
+      const mockResponse: apiGateway.CreateTraceResponse = {
+        status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
+        traceId: 'trace-sendtx',
+      };
+      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+
+      const trace = client.trace({ name: 'test', captureStackTrace: false });
+      trace.setProvider(mockProvider);
+      await new Promise(r => setTimeout(r, 0));
+
+      const txHash = await trace.sendTransaction({
+        from: '0xsender',
+        to: '0xreceiver',
+        data: '0xa9059cbb0000',
+        chainId: 1,
+      });
+
+      expect(txHash).toBe('0xtxhash123');
+      expect(mockProvider.request).toHaveBeenCalledWith(
+        expect.objectContaining({ method: 'eth_sendTransaction' })
+      );
+    });
+
+    it('sendTransaction should throw if no provider', async () => {
+      const trace = client.trace({ name: 'test' });
+      await expect(
+        trace.sendTransaction({ from: '0x1' })
+      ).rejects.toThrow('[MiradorTrace] No provider configured');
+    });
+
+    it('sendTransaction should capture error and re-throw', async () => {
+      const errorProvider: EIP1193Provider = {
+        request: jest.fn().mockImplementation(async (args: { method: string }) => {
+          if (args.method === 'eth_chainId') return '0x1';
+          if (args.method === 'eth_sendTransaction') throw new Error('User rejected');
+          return null;
+        }),
+      };
+
+      const trace = client.trace({ name: 'test', captureStackTrace: false });
+      trace.setProvider(errorProvider);
+      await new Promise(r => setTimeout(r, 0));
+
+      await expect(
+        trace.sendTransaction({ from: '0x1', chainId: 1 })
+      ).rejects.toThrow('User rejected');
+    });
+
+    it('sendTransaction should accept provider as parameter', async () => {
+      const trace = client.trace({ name: 'test', captureStackTrace: false });
+      const txHash = await trace.sendTransaction(
+        { from: '0xsender', chainId: 1 },
+        mockProvider
+      );
+      expect(txHash).toBe('0xtxhash123');
+    });
+  });
+
+  describe('resolveChain', () => {
+    it('should prefer explicit chain parameter', () => {
+      const trace = client.trace({ name: 'test' });
+      expect(trace.resolveChain('polygon', 1)).toBe('polygon');
+    });
+
+    it('should fall back to chainId', () => {
+      const trace = client.trace({ name: 'test' });
+      expect(trace.resolveChain(undefined, 137)).toBe('polygon');
+    });
+
+    it('should fall back to provider chain', async () => {
+      const mockProvider: EIP1193Provider = {
+        request: jest.fn().mockResolvedValue('0x1'),
+      };
+      const trace = client.trace({ name: 'test' });
+      trace.setProvider(mockProvider);
+      await new Promise(r => setTimeout(r, 0));
+      expect(trace.resolveChain()).toBe('ethereum');
+    });
+
+    it('should throw if chain cannot be determined', () => {
+      const trace = client.trace({ name: 'test' });
+      expect(() => trace.resolveChain()).toThrow('[MiradorTrace] Cannot determine chain');
+    });
+  });
+
+  describe('backwards compatibility', () => {
+    const mockResponse: apiGateway.CreateTraceResponse = {
+      status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
+      traceId: 'trace-compat',
+    };
+
+    beforeEach(() => {
+      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+      (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).CloseTrace = jest.fn().mockResolvedValue({ accepted: true });
+    });
+
+    it('should construct Client with just an API key', () => {
+      const c = new Client('my-key');
+      expect(c.apiKey).toBe('my-key');
+    });
+
+    it('should construct Client with API key and options', () => {
+      const c = new Client('my-key', { apiUrl: 'x' });
+      expect(c.apiKey).toBe('my-key');
+      expect(c.apiUrl).toBe('x');
+    });
+
+    it('should create trace without options', () => {
+      const trace = client.trace();
+      expect(trace).toBeInstanceOf(Trace);
+    });
+
+    it('should create trace with only legacy options', () => {
+      const trace = client.trace({ name: 'x', captureStackTrace: false, maxRetries: 2, retryBackoff: 500 });
+      expect(trace).toBeInstanceOf(Trace);
+    });
+
+    it('should support addTxHint with no options', async () => {
+      await client.trace({ name: 'test', captureStackTrace: false })
+        .addTxHint('0xhash', 'ethereum')
+        .create();
+
+      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      expect(calls.data?.txHashHints?.[0]?.txHash).toBe('0xhash');
+      expect(calls.data?.txHashHints?.[0]?.chain).toBe(Chain.CHAIN_ETHEREUM);
+      expect(calls.data?.txHashHints?.[0]?.details).toBeUndefined();
+    });
+
+    it('should support addTxHint with string details (raw string, not JSON)', async () => {
+      await client.trace({ name: 'test', captureStackTrace: false })
+        .addTxHint('0xhash', 'ethereum', 'swap tx')
+        .create();
+
+      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      expect(calls.data?.txHashHints?.[0]?.details).toBe('swap tx');
+    });
+
+    it('should support addTxHint with undefined options', async () => {
+      await client.trace({ name: 'test', captureStackTrace: false })
+        .addTxHint('0xhash', 'base', undefined)
+        .create();
+
+      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      expect(calls.data?.txHashHints?.[0]?.txHash).toBe('0xhash');
+      expect(calls.data?.txHashHints?.[0]?.chain).toBe(Chain.CHAIN_BASE);
+      expect(calls.data?.txHashHints?.[0]?.details).toBeUndefined();
+    });
+
+    it('should support addTxInputData', async () => {
+      await client.trace({ name: 'test', captureStackTrace: false })
+        .addTxInputData('0xabcd')
+        .create();
+
+      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      expect(calls.data?.events?.[0]?.name).toBe('Tx input data');
+      expect(calls.data?.events?.[0]?.details).toBe('0xabcd');
+    });
+
+    it('should support full legacy workflow with all data present', async () => {
+      await client.trace({ name: 'swap', captureStackTrace: false })
+        .addAttribute('user', '0x1')
+        .addTag('dex')
+        .addEvent('started', 'details')
+        .addTxHint('0xhash', 'ethereum', 'swap tx')
+        .addTxInputData('0xdata')
+        .create();
+
+      expect(mockApiGatewayClient.CreateTrace).toHaveBeenCalledTimes(1);
+      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+
+      // Verify name
+      expect(calls.name).toBe('swap');
+
+      // Verify attributes
+      expect(calls.data?.attributes?.[0]?.attributes).toEqual(
+        expect.objectContaining({ user: '0x1' })
+      );
+
+      // Verify tags
+      expect(calls.data?.tags?.[0]?.tags).toEqual(['dex']);
+
+      // Verify events (started + Tx input data)
+      const eventNames = calls.data?.events?.map((e: { name?: string; details?: string }) => e.name);
+      expect(eventNames).toContain('started');
+      expect(eventNames).toContain('Tx input data');
+
+      const startedEvent = calls.data?.events?.find((e: { name?: string; details?: string }) => e.name === 'started');
+      expect(startedEvent?.details).toBe('details');
+
+      const inputDataEvent = calls.data?.events?.find((e: { name?: string; details?: string }) => e.name === 'Tx input data');
+      expect(inputDataEvent?.details).toBe('0xdata');
+
+      // Verify tx hints with raw string details
+      expect(calls.data?.txHashHints?.[0]?.txHash).toBe('0xhash');
+      expect(calls.data?.txHashHints?.[0]?.chain).toBe(Chain.CHAIN_ETHEREUM);
+      expect(calls.data?.txHashHints?.[0]?.details).toBe('swap tx');
+    });
+
+    it('should ignore methods on closed trace without crashing', async () => {
+      const trace = client.trace({ name: 'test', captureStackTrace: false });
+      await trace.create();
+      await trace.close();
+
+      // These should be ignored (trace is closed)
+      trace.addTx({ hash: '0xabc', chainId: 1 });
+
+      // Verify warnings were logged for addTx
+      expect(mockConsoleWarn).toHaveBeenCalledWith(
+        '[MiradorTrace] Trace is closed, ignoring addTx'
+      );
+
+      // addAttribute, addTag, addEvent should also be silently ignored
+      trace.addAttribute('key', 'value');
+      expect(mockConsoleWarn).toHaveBeenCalledWith(
+        '[MiradorTrace] Trace is closed, ignoring addAttribute'
+      );
+
+      trace.addTag('tag');
+      expect(mockConsoleWarn).toHaveBeenCalledWith(
+        '[MiradorTrace] Trace is closed, ignoring addTag'
+      );
+
+      trace.addEvent('event', 'details');
+      expect(mockConsoleWarn).toHaveBeenCalledWith(
+        '[MiradorTrace] Trace is closed, ignoring addEvent'
+      );
+
+      // create() on a closed trace returns undefined
+      const result = await trace.create();
+      expect(result).toBeUndefined();
+
+      // sendTransaction without provider should still throw
+      const traceNoProvider = client.trace({ name: 'test2', captureStackTrace: false });
+      await traceNoProvider.create();
+      await traceNoProvider.close();
+      await expect(
+        traceNoProvider.sendTransaction({ from: '0x1' })
+      ).rejects.toThrow('[MiradorTrace] No provider configured');
+    });
+  });
+
+  describe('provider configuration', () => {
+    const mockResponse: apiGateway.CreateTraceResponse = {
+      status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
+      traceId: 'trace-provider-cfg',
+    };
+
+    let ethProvider: EIP1193Provider;
+    let polygonProvider: EIP1193Provider;
+
+    beforeEach(() => {
+      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+
+      ethProvider = {
+        request: jest.fn().mockImplementation(async (args: { method: string }) => {
+          if (args.method === 'eth_chainId') return '0x1';
+          if (args.method === 'eth_sendTransaction') return '0xethhash';
+          return null;
+        }),
+      };
+
+      polygonProvider = {
+        request: jest.fn().mockImplementation(async (args: { method: string }) => {
+          if (args.method === 'eth_chainId') return '0x89'; // 137
+          if (args.method === 'eth_sendTransaction') return '0xpolyhash';
+          return null;
+        }),
+      };
+    });
+
+    it('should flow provider from ClientOptions to trace', async () => {
+      const c = new Client('key', { provider: ethProvider });
+
+      // Re-mock after new Client construction
+      jest
+        .spyOn(apiGateway, 'IngestGatewayServiceClientImpl')
+        .mockImplementation(() => mockApiGatewayClient);
+
+      const trace = c.trace({ captureStackTrace: false });
+      await new Promise(r => setTimeout(r, 0));
+      expect(trace.getProviderChain()).toBe('ethereum');
+    });
+
+    it('should allow TraceOptions provider to override ClientOptions provider', async () => {
+      const c = new Client('key', { provider: ethProvider });
+
+      jest
+        .spyOn(apiGateway, 'IngestGatewayServiceClientImpl')
+        .mockImplementation(() => mockApiGatewayClient);
+
+      const trace = c.trace({ captureStackTrace: false, provider: polygonProvider });
+      await new Promise(r => setTimeout(r, 0));
+      expect(trace.getProviderChain()).toBe('polygon');
+    });
+
+    it('should allow setProvider to override TraceOptions provider', async () => {
+      const c = new Client('key');
+
+      jest
+        .spyOn(apiGateway, 'IngestGatewayServiceClientImpl')
+        .mockImplementation(() => mockApiGatewayClient);
+
+      const trace = c.trace({ captureStackTrace: false, provider: polygonProvider });
+      await new Promise(r => setTimeout(r, 0));
+      expect(trace.getProviderChain()).toBe('polygon');
+
+      trace.setProvider(ethProvider);
+      await new Promise(r => setTimeout(r, 0));
+      expect(trace.getProviderChain()).toBe('ethereum');
+    });
+
+    it('should handle setProvider with failing eth_chainId', async () => {
+      const failProvider: EIP1193Provider = {
+        request: jest.fn().mockRejectedValue(new Error('RPC error')),
+      };
+
+      const trace = client.trace({ name: 'test', captureStackTrace: false });
+      trace.setProvider(failProvider);
+      await new Promise(r => setTimeout(r, 0));
+      expect(trace.getProviderChain()).toBeNull();
+    });
+
+    it('should handle setProvider with unknown chain ID', async () => {
+      const unknownChainProvider: EIP1193Provider = {
+        request: jest.fn().mockResolvedValue('0xffffff'),
+      };
+
+      const trace = client.trace({ name: 'test', captureStackTrace: false });
+      trace.setProvider(unknownChainProvider);
+      await new Promise(r => setTimeout(r, 0));
+      expect(trace.getProviderChain()).toBeNull();
+    });
+
+    it('should serialize bigint values correctly in sendTransaction', async () => {
+      const trace = client.trace({ name: 'test', captureStackTrace: false });
+      trace.setProvider(ethProvider);
+      await new Promise(r => setTimeout(r, 0));
+
+      await trace.sendTransaction({
+        from: '0xsender',
+        to: '0xreceiver',
+        value: BigInt('1000000000000000000'),
+        gas: BigInt(21000),
+        chainId: 1,
+      });
+
+      const sendCall = (ethProvider.request as jest.Mock).mock.calls.find(
+        (c: [{ method: string }]) => c[0].method === 'eth_sendTransaction'
+      );
+      expect(sendCall).toBeDefined();
+      const params = sendCall[0].params[0];
+      expect(params.value).toBe('0xde0b6b3a7640000');
+      expect(params.gas).toBe('0x5208');
+    });
+
+    it('should capture tx:send event after sendTransaction', async () => {
+      const trace = client.trace({ name: 'test', captureStackTrace: false });
+      trace.setProvider(ethProvider);
+      await new Promise(r => setTimeout(r, 0));
+
+      await trace.sendTransaction({
+        from: '0xsender',
+        to: '0xreceiver',
+        data: '0xa9059cbb0000',
+        chainId: 1,
+      });
+
+      await trace.create();
+
+      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      const eventNames = calls.data?.events?.map((e: { name?: string; details?: string }) => e.name);
+      expect(eventNames).toContain('tx:send');
+    });
+
+    it('should capture tx:sent event with txHash after sendTransaction', async () => {
+      const trace = client.trace({ name: 'test', captureStackTrace: false });
+      trace.setProvider(ethProvider);
+      await new Promise(r => setTimeout(r, 0));
+
+      await trace.sendTransaction({
+        from: '0xsender',
+        to: '0xreceiver',
+        chainId: 1,
+      });
+
+      await trace.create();
+
+      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      const sentEvent = calls.data?.events?.find((e: { name?: string; details?: string }) => e.name === 'tx:sent');
+      expect(sentEvent).toBeDefined();
+      const sentDetails = JSON.parse(sentEvent.details);
+      expect(sentDetails.txHash).toBe('0xethhash');
+    });
+
+    it('should capture tx:error event with code and data', async () => {
+      const errorProvider: EIP1193Provider = {
+        request: jest.fn().mockImplementation(async (args: { method: string }) => {
+          if (args.method === 'eth_chainId') return '0x1';
+          if (args.method === 'eth_sendTransaction') {
+            const err = Object.assign(new Error('User rejected'), { code: 4001, data: '0xrevertdata' });
+            throw err;
+          }
+          return null;
+        }),
+      };
+
+      const trace = client.trace({ name: 'test', captureStackTrace: false });
+      trace.setProvider(errorProvider);
+      await new Promise(r => setTimeout(r, 0));
+
+      await expect(
+        trace.sendTransaction({ from: '0x1', chainId: 1 })
+      ).rejects.toThrow('User rejected');
+
+      await trace.create();
+
+      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      const errorEvent = calls.data?.events?.find((e: { name?: string; details?: string }) => e.name === 'tx:error');
+      expect(errorEvent).toBeDefined();
+      const errorDetails = JSON.parse(errorEvent.details);
+      expect(errorDetails.code).toBe(4001);
+      expect(errorDetails.data).toBe('0xrevertdata');
+      expect(errorDetails.message).toBe('User rejected');
+    });
+
+    it('should preserve original error from sendTransaction', async () => {
+      const originalError = new Error('Original provider error');
+      const errorProvider: EIP1193Provider = {
+        request: jest.fn().mockImplementation(async (args: { method: string }) => {
+          if (args.method === 'eth_chainId') return '0x1';
+          if (args.method === 'eth_sendTransaction') throw originalError;
+          return null;
+        }),
+      };
+
+      const trace = client.trace({ name: 'test', captureStackTrace: false });
+      trace.setProvider(errorProvider);
+      await new Promise(r => setTimeout(r, 0));
+
+      try {
+        await trace.sendTransaction({ from: '0x1', chainId: 1 });
+        fail('Expected error to be thrown');
+      } catch (err) {
+        expect(err).toBe(originalError);
+      }
+    });
+
+    it('should handle multiple sendTransaction calls', async () => {
+      const trace = client.trace({ name: 'test', captureStackTrace: false });
+      trace.setProvider(ethProvider);
+      await new Promise(r => setTimeout(r, 0));
+
+      await trace.sendTransaction({ from: '0xsender', to: '0xa', chainId: 1 });
+      await trace.sendTransaction({ from: '0xsender', to: '0xb', chainId: 1 });
+
+      await trace.create();
+
+      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      const sendEvents = calls.data?.events?.filter((e: { name?: string; details?: string }) => e.name === 'tx:send');
+      const sentEvents = calls.data?.events?.filter((e: { name?: string; details?: string }) => e.name === 'tx:sent');
+      expect(sendEvents).toHaveLength(2);
+      expect(sentEvents).toHaveLength(2);
+    });
+
+    it('should truncate long data in tx:send event', async () => {
+      const trace = client.trace({ name: 'test', captureStackTrace: false });
+      trace.setProvider(ethProvider);
+      await new Promise(r => setTimeout(r, 0));
+
+      const longData = '0xa9059cbb' + '0'.repeat(200);
+      await trace.sendTransaction({
+        from: '0xsender',
+        to: '0xreceiver',
+        data: longData,
+        chainId: 1,
+      });
+
+      await trace.create();
+
+      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      const sendEvent = calls.data?.events?.find((e: { name?: string; details?: string }) => e.name === 'tx:send');
+      const sendDetails = JSON.parse(sendEvent.details);
+      expect(sendDetails.data).toBe(longData.slice(0, 10) + '...');
+    });
+
+    it('should handle sendTransaction with no data field', async () => {
+      const trace = client.trace({ name: 'test', captureStackTrace: false });
+      trace.setProvider(ethProvider);
+      await new Promise(r => setTimeout(r, 0));
+
+      await trace.sendTransaction({
+        from: '0xsender',
+        to: '0xreceiver',
+        chainId: 1,
+      });
+
+      await trace.create();
+
+      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      const sendEvent = calls.data?.events?.find((e: { name?: string; details?: string }) => e.name === 'tx:send');
+      const sendDetails = JSON.parse(sendEvent.details);
+      expect(sendDetails.data).toBeUndefined();
+    });
+  });
+});
+
+describe('chainIdToName', () => {
+  it('should map known chain IDs', () => {
+    expect(chainIdToName(1)).toBe('ethereum');
+    expect(chainIdToName(137)).toBe('polygon');
+    expect(chainIdToName(42161)).toBe('arbitrum');
+    expect(chainIdToName(8453)).toBe('base');
+    expect(chainIdToName(10)).toBe('optimism');
+    expect(chainIdToName(56)).toBe('bsc');
+  });
+
+  it('should return undefined for unknown chain IDs', () => {
+    expect(chainIdToName(999999)).toBeUndefined();
+  });
+
+  it('should handle bigint input', () => {
+    expect(chainIdToName(BigInt(1))).toBe('ethereum');
+  });
+
+  it('should handle string input', () => {
+    expect(chainIdToName('137')).toBe('polygon');
+  });
+
+  it('should handle hex string input', () => {
+    expect(chainIdToName('0x1')).toBe('ethereum');
+  });
+});
+
+describe('MiradorProvider', () => {
+  let mockClient: Client;
+  let mockApiGatewayClient: jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>;
+  let mockUnderlying: EIP1193Provider;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+
+    mockClient = new Client('test-api-key');
+
+    mockApiGatewayClient = {
+      CreateTrace: jest.fn().mockResolvedValue({
+        status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
+        traceId: 'trace-provider-123',
+      }),
+    } as unknown as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>;
+
+    jest
+      .spyOn(apiGateway, 'IngestGatewayServiceClientImpl')
+      .mockImplementation(() => mockApiGatewayClient);
+
+    mockUnderlying = {
+      request: jest.fn().mockImplementation(async (args: { method: string }) => {
+        if (args.method === 'eth_chainId') return '0x1';
+        if (args.method === 'eth_sendTransaction') return '0xtxhash456';
+        if (args.method === 'eth_sendRawTransaction') return '0xtxhash456';
+        if (args.method === 'eth_blockNumber') return '0x100';
+        return null;
+      }),
+    };
+  });
+
+  it('should pass through non-tx methods', async () => {
+    const provider = new MiradorProvider(mockUnderlying, mockClient);
+    const result = await provider.request({ method: 'eth_blockNumber' });
+    expect(result).toBe('0x100');
+    expect(mockUnderlying.request).toHaveBeenCalledWith({ method: 'eth_blockNumber' });
+  });
+
+  it('should intercept eth_sendTransaction', async () => {
+    const provider = new MiradorProvider(mockUnderlying, mockClient);
+    const result = await provider.request({
+      method: 'eth_sendTransaction',
+      params: [{ from: '0xsender', to: '0xreceiver', data: '0xdeadbeef', chainId: '0x1' }],
+    });
+    expect(result).toBe('0xtxhash456');
+  });
+
+  it('should intercept eth_sendRawTransaction', async () => {
+    const provider = new MiradorProvider(mockUnderlying, mockClient);
+    const result = await provider.request({
+      method: 'eth_sendRawTransaction',
+      params: ['0xrawdata'],
+    });
+    expect(result).toBe('0xtxhash456');
+  });
+
+  it('should re-throw errors from underlying provider', async () => {
+    const errorUnderlying: EIP1193Provider = {
+      request: jest.fn().mockImplementation(async (args: { method: string }) => {
+        if (args.method === 'eth_chainId') return '0x1';
+        if (args.method === 'eth_sendTransaction') throw new Error('Tx reverted');
+        return null;
+      }),
+    };
+
+    const provider = new MiradorProvider(errorUnderlying, mockClient);
+    await expect(
+      provider.request({
+        method: 'eth_sendTransaction',
+        params: [{ from: '0xsender', chainId: '0x1' }],
+      })
+    ).rejects.toThrow('Tx reverted');
+  });
+
+  it('should use bound trace when provided', async () => {
+    const boundTrace = mockClient.trace({ name: 'BoundTrace' });
+    const provider = new MiradorProvider(mockUnderlying, mockClient, { trace: boundTrace });
+
+    await provider.request({
+      method: 'eth_sendTransaction',
+      params: [{ from: '0xsender', chainId: '0x1' }],
+    });
+    // Verify it doesn't throw
+  });
+
+  it('should NOT intercept eth_call', async () => {
+    const provider = new MiradorProvider(mockUnderlying, mockClient);
+    const result = await provider.request({ method: 'eth_call', params: [{ to: '0xcontract', data: '0xdeadbeef' }] });
+    expect(result).toBeNull();
+    expect(mockUnderlying.request).toHaveBeenCalledWith({ method: 'eth_call', params: [{ to: '0xcontract', data: '0xdeadbeef' }] });
+    // Should not trigger CreateTrace since it's a pass-through
+    expect(mockApiGatewayClient.CreateTrace).not.toHaveBeenCalled();
+  });
+
+  it('should NOT intercept eth_getBalance', async () => {
+    const provider = new MiradorProvider(mockUnderlying, mockClient);
+    const result = await provider.request({ method: 'eth_getBalance', params: ['0xaddr', 'latest'] });
+    expect(result).toBeNull();
+    expect(mockUnderlying.request).toHaveBeenCalledWith({ method: 'eth_getBalance', params: ['0xaddr', 'latest'] });
+    expect(mockApiGatewayClient.CreateTrace).not.toHaveBeenCalled();
+  });
+
+  it('should NOT intercept eth_estimateGas', async () => {
+    const provider = new MiradorProvider(mockUnderlying, mockClient);
+    const result = await provider.request({ method: 'eth_estimateGas', params: [{ from: '0x1', to: '0x2' }] });
+    expect(result).toBeNull();
+    expect(mockUnderlying.request).toHaveBeenCalledWith({ method: 'eth_estimateGas', params: [{ from: '0x1', to: '0x2' }] });
+    expect(mockApiGatewayClient.CreateTrace).not.toHaveBeenCalled();
+  });
+
+  it('should reuse bound trace across multiple sends', async () => {
+    const boundTrace = mockClient.trace({ name: 'BoundReuse', captureStackTrace: false });
+    const addEventSpy = jest.spyOn(boundTrace, 'addEvent');
+    const provider = new MiradorProvider(mockUnderlying, mockClient, { trace: boundTrace });
+
+    await provider.request({
+      method: 'eth_sendTransaction',
+      params: [{ from: '0xsender', chainId: '0x1' }],
+    });
+
+    await provider.request({
+      method: 'eth_sendTransaction',
+      params: [{ from: '0xsender2', chainId: '0x1' }],
+    });
+
+    // Both sends should use the same bound trace
+    const sentCalls = addEventSpy.mock.calls.filter((c: unknown[]) => c[0] === 'tx:sent');
+    expect(sentCalls).toHaveLength(2);
+  });
+
+  it('should create new trace per tx when no bound trace', async () => {
+    const traceSpy = jest.spyOn(mockClient, 'trace');
+    const provider = new MiradorProvider(mockUnderlying, mockClient);
+
+    await provider.request({
+      method: 'eth_sendTransaction',
+      params: [{ from: '0xsender', chainId: '0x1' }],
+    });
+
+    await provider.request({
+      method: 'eth_sendTransaction',
+      params: [{ from: '0xsender2', chainId: '0x1' }],
+    });
+
+    // Each send should create a new trace
+    expect(traceSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('should pass traceOptions through when creating new traces', async () => {
+    const traceSpy = jest.spyOn(mockClient, 'trace');
+    const provider = new MiradorProvider(mockUnderlying, mockClient, {
+      traceOptions: { name: 'auto-tx' },
+    });
+
+    await provider.request({
+      method: 'eth_sendTransaction',
+      params: [{ from: '0xsender', chainId: '0x1' }],
+    });
+
+    expect(traceSpy).toHaveBeenCalledWith({ name: 'auto-tx' });
+  });
+
+  it('should re-throw errors from underlying for eth_sendRawTransaction', async () => {
+    const errorUnderlying: EIP1193Provider = {
+      request: jest.fn().mockImplementation(async (args: { method: string }) => {
+        if (args.method === 'eth_chainId') return '0x1';
+        if (args.method === 'eth_sendRawTransaction') throw new Error('Raw tx failed');
+        return null;
+      }),
+    };
+
+    const provider = new MiradorProvider(errorUnderlying, mockClient);
+    await expect(
+      provider.request({
+        method: 'eth_sendRawTransaction',
+        params: ['0xrawdata'],
+      })
+    ).rejects.toThrow('Raw tx failed');
+  });
+
+  it('should handle eth_sendTransaction with no params gracefully', async () => {
+    const provider = new MiradorProvider(mockUnderlying, mockClient);
+    // params undefined - should not crash
+    const result = await provider.request({
+      method: 'eth_sendTransaction',
+    });
+    expect(result).toBe('0xtxhash456');
+  });
+
+  it('should pass unmodified args to underlying provider', async () => {
+    const provider = new MiradorProvider(mockUnderlying, mockClient);
+    const args = {
+      method: 'eth_sendTransaction' as const,
+      params: [{ from: '0xsender', to: '0xreceiver', data: '0xdeadbeef', chainId: '0x1' }],
+    };
+
+    await provider.request(args);
+
+    // Verify underlying received the exact same args object
+    expect(mockUnderlying.request).toHaveBeenCalledWith(args);
+  });
 });

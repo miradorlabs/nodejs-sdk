@@ -31,6 +31,7 @@ export class Client {
   public apiKey?: string;
   public keepAliveIntervalMs: number;
   private rpc: NodeGrpcRpc;
+  private provider?: import('./types').EIP1193Provider;
 
   /**
    * Create a new Client instance
@@ -41,6 +42,7 @@ export class Client {
     this.apiKey = apiKey;
     this.apiUrl = options?.apiUrl || DEFAULT_API_URL;
     this.keepAliveIntervalMs = options?.keepAliveIntervalMs || DEFAULT_KEEP_ALIVE_INTERVAL_MS;
+    this.provider = options?.provider;
     this.rpc = new NodeGrpcRpc(this.apiUrl, apiKey);
   }
 
@@ -104,6 +106,7 @@ export class Client {
       maxRetries: options?.maxRetries ?? DEFAULT_MAX_RETRIES,
       retryBackoff: options?.retryBackoff ?? DEFAULT_RETRY_BACKOFF,
       keepAliveIntervalMs: this.keepAliveIntervalMs,
+      provider: options?.provider ?? this.provider,
     });
   }
 }
