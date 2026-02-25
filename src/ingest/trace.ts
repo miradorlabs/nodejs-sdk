@@ -310,12 +310,10 @@ export class Trace {
     if (typeof options === 'string') {
       details = options;
     } else if (options) {
-      if (options.input || options.details) {
-        details = JSON.stringify({
-          ...(options.input ? { input: options.input } : {}),
-          ...(options.details ? { details: options.details } : {}),
-        });
+      if (options.input) {
+        this.addTxInputData(options.input);
       }
+      details = options.details;
     }
 
     this.txHashHints.push({
@@ -352,7 +350,10 @@ export class Trace {
     const resolvedChain = this.resolveChain(chain, tx.chainId);
     const input = tx.data ?? tx.input;
 
-    this.addTxHint(tx.hash, resolvedChain, input ? { input } : undefined);
+    if (input) {
+      this.addTxInputData(input);
+    }
+    this.addTxHint(tx.hash, resolvedChain);
     return this;
   }
 
@@ -418,7 +419,10 @@ export class Trace {
       }) as string;
 
       const chain = this.resolveChain(undefined, tx.chainId);
-      this.addTxHint(txHash, chain, { input: tx.data });
+      if (tx.data) {
+        this.addTxInputData(tx.data);
+      }
+      this.addTxHint(txHash, chain);
       this.addEvent('tx:sent', { txHash });
 
       return txHash;

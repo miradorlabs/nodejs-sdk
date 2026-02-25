@@ -845,8 +845,9 @@ describe('Client', () => {
         .create();
 
       const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
-      const details = JSON.parse(calls.data?.txHashHints?.[0]?.details || '{}');
-      expect(details.input).toBe('0xa9059cbb...');
+      const inputEvent = calls.data?.events?.find((e: { name?: string }) => e.name === 'Tx input data');
+      expect(inputEvent).toBeDefined();
+      expect(inputEvent?.details).toBe('0xa9059cbb...');
     });
 
     it('should accept TxHintOptions with input and details', async () => {
@@ -861,9 +862,10 @@ describe('Client', () => {
         .create();
 
       const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
-      const details = JSON.parse(calls.data?.txHashHints?.[0]?.details || '{}');
-      expect(details.input).toBe('0xa9059cbb...');
-      expect(details.details).toBe('swap');
+      const inputEvent = calls.data?.events?.find((e: { name?: string }) => e.name === 'Tx input data');
+      expect(inputEvent).toBeDefined();
+      expect(inputEvent?.details).toBe('0xa9059cbb...');
+      expect(calls.data?.txHashHints?.[0]?.details).toBe('swap');
     });
   });
 
@@ -896,8 +898,9 @@ describe('Client', () => {
         .create();
 
       const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
-      const details = JSON.parse(calls.data?.txHashHints?.[0]?.details || '{}');
-      expect(details.input).toBe('0xa9059cbb...');
+      const inputEvent = calls.data?.events?.find((e: { name?: string }) => e.name === 'Tx input data');
+      expect(inputEvent).toBeDefined();
+      expect(inputEvent?.details).toBe('0xa9059cbb...');
     });
 
     it('should extract input data from tx.input', async () => {
@@ -913,8 +916,9 @@ describe('Client', () => {
 
       const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
       expect(calls.data?.txHashHints?.[0]?.chain).toBe(Chain.CHAIN_POLYGON);
-      const details = JSON.parse(calls.data?.txHashHints?.[0]?.details || '{}');
-      expect(details.input).toBe('0xdeadbeef');
+      const inputEvent = calls.data?.events?.find((e: { name?: string }) => e.name === 'Tx input data');
+      expect(inputEvent).toBeDefined();
+      expect(inputEvent?.details).toBe('0xdeadbeef');
     });
 
     it('should accept explicit chain parameter over chainId', async () => {

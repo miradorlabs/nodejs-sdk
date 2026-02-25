@@ -37,9 +37,10 @@ export class MiradorProvider implements EIP1193Provider {
 
       if (args.method === 'eth_sendTransaction' && txParams) {
         const chain = trace.resolveChain(undefined, txParams.chainId as number | string | undefined);
-        trace.addTxHint(txHash, chain, {
-          input: txParams.data as string | undefined,
-        });
+        if (txParams.data) {
+          trace.addTxInputData(txParams.data as string);
+        }
+        trace.addTxHint(txHash, chain);
       } else {
         const providerChain = trace.getProviderChain();
         if (providerChain) {
