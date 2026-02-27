@@ -111,6 +111,8 @@ export interface StackTrace {
 export interface TraceOptions {
   /** Trace name */
   name?: string;
+  /** Resume an existing trace by ID (e.g., passed from frontend SDK) */
+  traceId?: string;
   /** Capture stack trace at trace creation point (default: true) */
   captureStackTrace?: boolean;
   /** Maximum number of retry attempts on failure (default: 3) */

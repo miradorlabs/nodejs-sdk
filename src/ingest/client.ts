@@ -102,6 +102,7 @@ export class Client {
   trace(options?: TraceOptions): Trace {
     return new Trace(this, {
       name: options?.name,
+      traceId: options?.traceId,
       captureStackTrace: options?.captureStackTrace ?? DEFAULT_CAPTURE_STACK_TRACE,
       maxRetries: options?.maxRetries ?? DEFAULT_MAX_RETRIES,
       retryBackoff: options?.retryBackoff ?? DEFAULT_RETRY_BACKOFF,
