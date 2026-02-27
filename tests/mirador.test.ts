@@ -1472,6 +1472,362 @@ describe('Client', () => {
       expect(sendDetails.data).toBeUndefined();
     });
   });
+
+  describe('resumed trace (traceId option)', () => {
+    const mockUpdateResponse: apiGateway.UpdateTraceResponse = {
+      status: {
+        code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
+        errorMessage: undefined,
+      },
+    };
+
+    const mockKeepAliveResponse: apiGateway.KeepAliveResponse = {
+      accepted: true,
+    };
+
+    const mockCloseResponse: apiGateway.CloseTraceResponse = {
+      accepted: true,
+    };
+
+    beforeEach(() => {
+      (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).UpdateTrace =
+        jest.fn().mockResolvedValue(mockUpdateResponse);
+      (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).KeepAlive =
+        jest.fn().mockResolvedValue(mockKeepAliveResponse);
+      (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).CloseTrace =
+        jest.fn().mockResolvedValue(mockCloseResponse);
+    });
+
+    it('should send UpdateTrace instead of CreateTrace when traceId is provided via options', async () => {
+      const traceId = await client.trace({ traceId: 'frontend-trace-abc', captureStackTrace: false })
+        .addAttribute('endpoint', '/api/swap')
+        .addTag('backend')
+        .create();
+
+      expect(traceId).toBe('frontend-trace-abc');
+      expect(mockApiGatewayClient.CreateTrace).not.toHaveBeenCalled();
+      expect((mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).UpdateTrace).toHaveBeenCalledTimes(1);
+    });
+
+    it('should send UpdateTrace instead of CreateTrace when traceId is set via setTraceId', async () => {
+      const trace = client.trace({ captureStackTrace: false })
+        .addAttribute('endpoint', '/api/swap')
+        .addTag('backend');
+
+      trace.setTraceId('frontend-trace-xyz');
+      const traceId = await trace.create();
+
+      expect(traceId).toBe('frontend-trace-xyz');
+      expect(mockApiGatewayClient.CreateTrace).not.toHaveBeenCalled();
+      expect((mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).UpdateTrace).toHaveBeenCalledTimes(1);
+    });
+
+    it('should include attributes in the UpdateTrace request', async () => {
+      await client.trace({ traceId: 'trace-attrs', captureStackTrace: false })
+        .addAttribute('user', '0xabc')
+        .addAttribute('slippage', 25)
+        .addAttributes({ env: 'production', region: 'us-east' })
+        .create();
+
+      const updateCall = (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).UpdateTrace.mock.calls[0][0];
+      expect(updateCall.traceId).toBe('trace-attrs');
+      expect(updateCall.data?.attributes?.[0]?.attributes).toEqual({
+        user: '0xabc',
+        slippage: '25',
+        env: 'production',
+        region: 'us-east',
+      });
+    });
+
+    it('should include tags in the UpdateTrace request', async () => {
+      await client.trace({ traceId: 'trace-tags', captureStackTrace: false })
+        .addTag('backend')
+        .addTags(['api', 'swap'])
+        .create();
+
+      const updateCall = (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).UpdateTrace.mock.calls[0][0];
+      expect(updateCall.data?.tags?.[0]?.tags).toEqual(['backend', 'api', 'swap']);
+    });
+
+    it('should include events in the UpdateTrace request', async () => {
+      await client.trace({ traceId: 'trace-events', captureStackTrace: false })
+        .addEvent('backend:received', 'request received')
+        .addEvent('backend:processed', { duration: 150 })
+        .create();
+
+      const updateCall = (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).UpdateTrace.mock.calls[0][0];
+      expect(updateCall.data?.events).toHaveLength(2);
+      expect(updateCall.data?.events?.[0]?.name).toBe('backend:received');
+      expect(updateCall.data?.events?.[0]?.details).toBe('request received');
+      expect(updateCall.data?.events?.[1]?.name).toBe('backend:processed');
+      expect(JSON.parse(updateCall.data?.events?.[1]?.details)).toEqual({ duration: 150 });
+    });
+
+    it('should include txHashHints in the UpdateTrace request', async () => {
+      await client.trace({ traceId: 'trace-tx', captureStackTrace: false })
+        .addTxHint('0xhash123', 'ethereum', 'swap tx')
+        .create();
+
+      const updateCall = (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).UpdateTrace.mock.calls[0][0];
+      expect(updateCall.data?.txHashHints).toHaveLength(1);
+      expect(updateCall.data?.txHashHints?.[0]?.txHash).toBe('0xhash123');
+      expect(updateCall.data?.txHashHints?.[0]?.chain).toBe(Chain.CHAIN_ETHEREUM);
+      expect(updateCall.data?.txHashHints?.[0]?.details).toBe('swap tx');
+    });
+
+    it('should include all data types in a complex resumed trace', async () => {
+      await client.trace({ traceId: 'trace-complex', captureStackTrace: false })
+        .addAttribute('user', '0xabc')
+        .addTag('dex')
+        .addEvent('started', 'swap initiated')
+        .addTxHint('0xhash', 'polygon')
+        .addTxInputData('0xa9059cbb')
+        .create();
+
+      expect(mockApiGatewayClient.CreateTrace).not.toHaveBeenCalled();
+      const updateCall = (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).UpdateTrace.mock.calls[0][0];
+      expect(updateCall.traceId).toBe('trace-complex');
+      expect(updateCall.data?.attributes?.[0]?.attributes).toEqual({ user: '0xabc' });
+      expect(updateCall.data?.tags?.[0]?.tags).toEqual(['dex']);
+      expect(updateCall.data?.events?.map((e: { name?: string }) => e.name)).toContain('started');
+      expect(updateCall.data?.events?.map((e: { name?: string }) => e.name)).toContain('Tx input data');
+      expect(updateCall.data?.txHashHints?.[0]?.chain).toBe(Chain.CHAIN_POLYGON);
+    });
+
+    it('should start keep-alive after successful resumed create()', async () => {
+      const trace = client.trace({ traceId: 'trace-keepalive', captureStackTrace: false });
+      await trace.create();
+
+      // Wait for keep-alive interval to fire
+      jest.useFakeTimers();
+      // Re-create with fake timers active
+      jest.useRealTimers();
+
+      // Verify trace is not closed and has the right ID
+      expect(trace.getTraceId()).toBe('trace-keepalive');
+      expect(trace.isClosed()).toBe(false);
+
+      // Clean up
+      await trace.close();
+    });
+
+    it('should return the pre-set traceId from getTraceId() before create()', () => {
+      const trace = client.trace({ traceId: 'pre-set-id', captureStackTrace: false });
+      expect(trace.getTraceId()).toBe('pre-set-id');
+    });
+
+    it('should return the pre-set traceId from getTraceId() after setTraceId()', () => {
+      const trace = client.trace({ captureStackTrace: false });
+      expect(trace.getTraceId()).toBeNull();
+      trace.setTraceId('late-set-id');
+      expect(trace.getTraceId()).toBe('late-set-id');
+    });
+
+    it('should return undefined when resumed UpdateTrace fails', async () => {
+      (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).UpdateTrace =
+        jest.fn().mockRejectedValue(new Error('Network error'));
+
+      const traceId = await client.trace({
+        traceId: 'fail-trace',
+        captureStackTrace: false,
+        maxRetries: 0,
+      }).create();
+
+      expect(traceId).toBeUndefined();
+      expect(mockConsoleError).toHaveBeenCalledWith(
+        '[MiradorTrace] UpdateTrace error after retries (resumed trace):',
+        expect.any(Error)
+      );
+    });
+
+    it('should retry UpdateTrace on failure for resumed traces', async () => {
+      const updateMock = jest.fn()
+        .mockRejectedValueOnce(new Error('Transient error'))
+        .mockResolvedValueOnce(mockUpdateResponse);
+
+      (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).UpdateTrace = updateMock;
+
+      const traceId = await client.trace({
+        traceId: 'retry-trace',
+        captureStackTrace: false,
+        maxRetries: 1,
+        retryBackoff: 1, // 1ms for fast tests
+      }).create();
+
+      expect(traceId).toBe('retry-trace');
+      expect(updateMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('should ignore setTraceId on a closed trace', async () => {
+      const mockCreateResponse: apiGateway.CreateTraceResponse = {
+        status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
+        traceId: 'original-id',
+      };
+      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockCreateResponse);
+
+      const trace = client.trace({ captureStackTrace: false });
+      await trace.create();
+      await trace.close();
+
+      trace.setTraceId('should-be-ignored');
+      expect(trace.getTraceId()).toBe('original-id');
+      expect(mockConsoleWarn).toHaveBeenCalledWith(
+        '[MiradorTrace] Trace is closed, ignoring setTraceId'
+      );
+    });
+
+    it('should return this from setTraceId for chaining', () => {
+      const trace = client.trace({ captureStackTrace: false });
+      const result = trace.setTraceId('chain-test');
+      expect(result).toBe(trace);
+    });
+
+    it('should close a resumed trace correctly', async () => {
+      const trace = client.trace({ traceId: 'close-test', captureStackTrace: false });
+      await trace.create();
+      await trace.close('done');
+
+      expect(trace.isClosed()).toBe(true);
+      expect((mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).CloseTrace).toHaveBeenCalledWith(
+        expect.objectContaining({ traceId: 'close-test', text: 'done' })
+      );
+    });
+
+    it('should return undefined when create() is called on a closed resumed trace', async () => {
+      const trace = client.trace({ traceId: 'closed-resumed', captureStackTrace: false });
+      await trace.close();
+
+      const result = await trace.create();
+      expect(result).toBeUndefined();
+      expect(mockConsoleWarn).toHaveBeenCalledWith('[MiradorTrace] Trace is closed, cannot create');
+    });
+
+    it('should allow setTraceId to override a previously set traceId', async () => {
+      const trace = client.trace({ traceId: 'first-id', captureStackTrace: false });
+      expect(trace.getTraceId()).toBe('first-id');
+
+      trace.setTraceId('second-id');
+      expect(trace.getTraceId()).toBe('second-id');
+
+      await trace.create();
+
+      const updateCall = (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).UpdateTrace.mock.calls[0][0];
+      expect(updateCall.traceId).toBe('second-id');
+    });
+
+    it('should send empty data arrays when no data is added to resumed trace', async () => {
+      await client.trace({ traceId: 'empty-data', captureStackTrace: false }).create();
+
+      const updateCall = (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).UpdateTrace.mock.calls[0][0];
+      expect(updateCall.traceId).toBe('empty-data');
+      expect(updateCall.data?.attributes).toEqual([]);
+      expect(updateCall.data?.tags).toEqual([]);
+      expect(updateCall.data?.events).toEqual([]);
+      expect(updateCall.data?.txHashHints).toEqual([]);
+    });
+
+    it('should include sendClientTimestamp in the UpdateTrace request', async () => {
+      const before = new Date();
+      await client.trace({ traceId: 'timestamp-test', captureStackTrace: false }).create();
+      const after = new Date();
+
+      const updateCall = (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).UpdateTrace.mock.calls[0][0];
+      expect(updateCall.sendClientTimestamp).toBeDefined();
+      expect(updateCall.sendClientTimestamp!.getTime()).toBeGreaterThanOrEqual(before.getTime());
+      expect(updateCall.sendClientTimestamp!.getTime()).toBeLessThanOrEqual(after.getTime());
+    });
+  });
+
+  describe('standard trace (no traceId)', () => {
+    const mockCreateResponse: apiGateway.CreateTraceResponse = {
+      status: {
+        code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
+        errorMessage: undefined,
+      },
+      traceId: 'server-assigned-id',
+    };
+
+    const mockKeepAliveResponse: apiGateway.KeepAliveResponse = {
+      accepted: true,
+    };
+
+    const mockCloseResponse: apiGateway.CloseTraceResponse = {
+      accepted: true,
+    };
+
+    beforeEach(() => {
+      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockCreateResponse);
+      (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).UpdateTrace =
+        jest.fn();
+      (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).KeepAlive =
+        jest.fn().mockResolvedValue(mockKeepAliveResponse);
+      (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).CloseTrace =
+        jest.fn().mockResolvedValue(mockCloseResponse);
+    });
+
+    it('should send CreateTrace when no traceId is provided', async () => {
+      const traceId = await client.trace({ name: 'standard', captureStackTrace: false })
+        .addAttribute('key', 'value')
+        .create();
+
+      expect(traceId).toBe('server-assigned-id');
+      expect(mockApiGatewayClient.CreateTrace).toHaveBeenCalledTimes(1);
+      expect((mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).UpdateTrace).not.toHaveBeenCalled();
+    });
+
+    it('should send CreateTrace when traceId option is undefined', async () => {
+      const traceId = await client.trace({ name: 'explicit-undefined', traceId: undefined, captureStackTrace: false })
+        .create();
+
+      expect(traceId).toBe('server-assigned-id');
+      expect(mockApiGatewayClient.CreateTrace).toHaveBeenCalledTimes(1);
+      expect((mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).UpdateTrace).not.toHaveBeenCalled();
+    });
+
+    it('should have null traceId before create() when no traceId option', () => {
+      const trace = client.trace({ captureStackTrace: false });
+      expect(trace.getTraceId()).toBeNull();
+    });
+
+    it('should have server-assigned traceId after create()', async () => {
+      const trace = client.trace({ captureStackTrace: false });
+      await trace.create();
+      expect(trace.getTraceId()).toBe('server-assigned-id');
+    });
+
+    it('should include name in CreateTrace request', async () => {
+      await client.trace({ name: 'my-trace', captureStackTrace: false }).create();
+
+      const createCall = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      expect(createCall.name).toBe('my-trace');
+    });
+
+    it('should include all data in CreateTrace request', async () => {
+      await client.trace({ name: 'full-trace', captureStackTrace: false })
+        .addAttribute('user', '0xabc')
+        .addTag('dex')
+        .addEvent('started', 'details')
+        .addTxHint('0xhash', 'ethereum')
+        .create();
+
+      const createCall = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      expect(createCall.data?.attributes?.[0]?.attributes).toEqual({ user: '0xabc' });
+      expect(createCall.data?.tags?.[0]?.tags).toEqual(['dex']);
+      expect(createCall.data?.events?.[0]?.name).toBe('started');
+      expect(createCall.data?.txHashHints?.[0]?.txHash).toBe('0xhash');
+    });
+
+    it('should close a standard trace correctly', async () => {
+      const trace = client.trace({ captureStackTrace: false });
+      await trace.create();
+      await trace.close('finished');
+
+      expect(trace.isClosed()).toBe(true);
+      expect((mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).CloseTrace).toHaveBeenCalledWith(
+        expect.objectContaining({ traceId: 'server-assigned-id', text: 'finished' })
+      );
+    });
+  });
 });
 
 describe('chainIdToName', () => {

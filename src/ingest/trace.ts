@@ -20,6 +20,7 @@ import { chainIdToName } from './chains';
 /** Options passed to Trace constructor (with defaults applied) */
 interface ResolvedTraceOptions {
   name?: string;
+  traceId?: string;
   captureStackTrace: boolean;
   maxRetries: number;
   retryBackoff: number;
@@ -102,6 +103,7 @@ export class Trace {
   constructor(client: TraceSubmitter, options: ResolvedTraceOptions) {
     this.client = client;
     this.name = options.name;
+    this.traceId = options.traceId ?? null;
     this.keepAliveIntervalMs = options.keepAliveIntervalMs;
     this.maxRetries = options.maxRetries;
     this.retryBackoff = options.retryBackoff;
@@ -483,6 +485,21 @@ export class Trace {
       return undefined;
     }
 
+    // If trace ID was pre-set (e.g., from frontend SDK), send an update instead of create
+    if (this.traceId) {
+      try {
+        await this.retryWithBackoff(
+          () => this.sendUpdate(),
+          'UpdateTrace (resumed)'
+        );
+        this.startKeepAlive();
+        return this.traceId;
+      } catch (error) {
+        console.error('[MiradorTrace] UpdateTrace error after retries (resumed trace):', error);
+        return undefined;
+      }
+    }
+
     // Build attributes, including creation stack trace if captured
     const attributesToSend = { ...this.attributes };
     if (this.creationStackTrace) {
@@ -553,6 +570,22 @@ export class Trace {
   }
 
   /**
+   * Set the trace ID on an existing trace instance, allowing it to resume
+   * a trace created elsewhere (e.g., passed from a frontend SDK via HTTP header).
+   * Subsequent calls to create() will send an UpdateTrace instead of CreateTrace.
+   * @param traceId The trace ID to resume
+   * @returns This trace builder for chaining
+   */
+  setTraceId(traceId: string): this {
+    if (this.closed) {
+      console.warn('[MiradorTrace] Trace is closed, ignoring setTraceId');
+      return this;
+    }
+    this.traceId = traceId;
+    return this;
+  }
+
+  /**
    * Check if the trace has been closed
    * @returns True if the trace is closed
    */
@@ -608,6 +641,49 @@ export class Trace {
     } catch (error) {
       console.error('[MiradorTrace] Keep-alive error:', error);
     }
+  }
+
+  /**
+   * Build and send an UpdateTraceRequest with current accumulated data
+   * @private
+   */
+  private async sendUpdate(): Promise<UpdateTraceResponse> {
+    const attributesToSend = { ...this.attributes };
+    if (this.creationStackTrace) {
+      attributesToSend['source.stack_trace'] = formatStackTrace(this.creationStackTrace);
+      if (this.creationStackTrace.frames.length > 0) {
+        const topFrame = this.creationStackTrace.frames[0];
+        attributesToSend['source.file'] = topFrame.fileName;
+        attributesToSend['source.line'] = String(topFrame.lineNumber);
+        attributesToSend['source.function'] = topFrame.functionName;
+      }
+    }
+
+    const request: UpdateTraceRequest = {
+      traceId: this.traceId!,
+      data: {
+        attributes: Object.keys(attributesToSend).length > 0
+          ? [{ attributes: attributesToSend, timestamp: new Date() }]
+          : [],
+        tags: this.tags.length > 0
+          ? [{ tags: this.tags, timestamp: new Date() }]
+          : [],
+        events: this.events.map((e) => ({
+          name: e.eventName,
+          details: e.details,
+          timestamp: e.timestamp,
+        })),
+        txHashHints: this.txHashHints.map((hint) => ({
+          chain: CHAIN_MAP[hint.chain],
+          txHash: hint.txHash,
+          details: hint.details,
+          timestamp: hint.timestamp,
+        })),
+      },
+      sendClientTimestamp: new Date(),
+    };
+
+    return await this.client._updateTrace(request);
   }
 
   /**
