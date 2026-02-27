@@ -1702,17 +1702,35 @@ describe('Client', () => {
       expect(mockConsoleWarn).toHaveBeenCalledWith('[MiradorTrace] Trace is closed, cannot create');
     });
 
-    it('should allow setTraceId to override a previously set traceId', async () => {
+    it('should ignore setTraceId if trace ID is already set via options', async () => {
       const trace = client.trace({ traceId: 'first-id', captureStackTrace: false });
       expect(trace.getTraceId()).toBe('first-id');
 
       trace.setTraceId('second-id');
-      expect(trace.getTraceId()).toBe('second-id');
+      expect(trace.getTraceId()).toBe('first-id');
+      expect(mockConsoleWarn).toHaveBeenCalledWith('[MiradorTrace] Trace ID is already set, ignoring setTraceId');
 
       await trace.create();
 
       const updateCall = (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).UpdateTrace.mock.calls[0][0];
-      expect(updateCall.traceId).toBe('second-id');
+      expect(updateCall.traceId).toBe('first-id');
+    });
+
+    it('should ignore setTraceId if trace ID is already set via create()', async () => {
+      mockApiGatewayClient.UpdateTrace.mockResolvedValue({
+        status: {
+          code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
+          errorMessage: undefined,
+        },
+      });
+
+      const trace = client.trace({ captureStackTrace: false });
+      trace.setTraceId('server-id');
+      expect(trace.getTraceId()).toBe('server-id');
+
+      trace.setTraceId('override-id');
+      expect(trace.getTraceId()).toBe('server-id');
+      expect(mockConsoleWarn).toHaveBeenCalledWith('[MiradorTrace] Trace ID is already set, ignoring setTraceId');
     });
 
     it('should send empty data arrays when no data is added to resumed trace', async () => {

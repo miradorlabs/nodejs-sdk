@@ -557,6 +557,10 @@ export class Trace {
       console.warn('[MiradorTrace] Trace is closed, ignoring setTraceId');
       return this;
     }
+    if (this.traceId !== null) {
+      console.warn('[MiradorTrace] Trace ID is already set, ignoring setTraceId');
+      return this;
+    }
     this.traceId = traceId;
     return this;
   }
