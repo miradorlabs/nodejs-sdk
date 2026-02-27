@@ -10,6 +10,7 @@ import type {
   KeepAliveResponse,
   CloseTraceRequest,
   CloseTraceResponse,
+  TraceData,
 } from 'mirador-gateway-ingest/proto/gateway/ingest/v1/ingest_gateway';
 import { Chain } from 'mirador-gateway-ingest/proto/gateway/ingest/v1/ingest_gateway';
 import { ResponseStatus_StatusCode } from 'mirador-gateway-ingest/proto/gateway/common/v1/status';
@@ -488,8 +489,13 @@ export class Trace {
     // If trace ID was pre-set (e.g., from frontend SDK), send an update instead of create
     if (this.traceId) {
       try {
+        const request: UpdateTraceRequest = {
+          traceId: this.traceId,
+          data: this.buildTraceData(),
+          sendClientTimestamp: new Date(),
+        };
         await this.retryWithBackoff(
-          () => this.sendUpdate(),
+          () => this.client._updateTrace(request),
           'UpdateTrace (resumed)'
         );
         this.startKeepAlive();
@@ -500,39 +506,9 @@ export class Trace {
       }
     }
 
-    // Build attributes, including creation stack trace if captured
-    const attributesToSend = { ...this.attributes };
-    if (this.creationStackTrace) {
-      attributesToSend['source.stack_trace'] = formatStackTrace(this.creationStackTrace);
-      if (this.creationStackTrace.frames.length > 0) {
-        const topFrame = this.creationStackTrace.frames[0];
-        attributesToSend['source.file'] = topFrame.fileName;
-        attributesToSend['source.line'] = String(topFrame.lineNumber);
-        attributesToSend['source.function'] = topFrame.functionName;
-      }
-    }
-
     const request: CreateTraceRequest = {
       name: this.name,
-      data: {
-        attributes: Object.keys(attributesToSend).length > 0
-          ? [{ attributes: attributesToSend, timestamp: new Date() }]
-          : [],
-        tags: this.tags.length > 0
-          ? [{ tags: this.tags, timestamp: new Date() }]
-          : [],
-        events: this.events.map((e) => ({
-          name: e.eventName,
-          details: e.details,
-          timestamp: e.timestamp,
-        })),
-        txHashHints: this.txHashHints.map((hint) => ({
-          chain: CHAIN_MAP[hint.chain],
-          txHash: hint.txHash,
-          details: hint.details,
-          timestamp: hint.timestamp,
-        })),
-      },
+      data: this.buildTraceData(),
       sendClientTimestamp: new Date(),
     };
 
@@ -644,10 +620,10 @@ export class Trace {
   }
 
   /**
-   * Build and send an UpdateTraceRequest with current accumulated data
+   * Build the TraceData payload from accumulated attributes, tags, events, and tx hints.
    * @private
    */
-  private async sendUpdate(): Promise<UpdateTraceResponse> {
+  private buildTraceData(): TraceData {
     const attributesToSend = { ...this.attributes };
     if (this.creationStackTrace) {
       attributesToSend['source.stack_trace'] = formatStackTrace(this.creationStackTrace);
@@ -659,31 +635,25 @@ export class Trace {
       }
     }
 
-    const request: UpdateTraceRequest = {
-      traceId: this.traceId!,
-      data: {
-        attributes: Object.keys(attributesToSend).length > 0
-          ? [{ attributes: attributesToSend, timestamp: new Date() }]
-          : [],
-        tags: this.tags.length > 0
-          ? [{ tags: this.tags, timestamp: new Date() }]
-          : [],
-        events: this.events.map((e) => ({
-          name: e.eventName,
-          details: e.details,
-          timestamp: e.timestamp,
-        })),
-        txHashHints: this.txHashHints.map((hint) => ({
-          chain: CHAIN_MAP[hint.chain],
-          txHash: hint.txHash,
-          details: hint.details,
-          timestamp: hint.timestamp,
-        })),
-      },
-      sendClientTimestamp: new Date(),
+    return {
+      attributes: Object.keys(attributesToSend).length > 0
+        ? [{ attributes: attributesToSend, timestamp: new Date() }]
+        : [],
+      tags: this.tags.length > 0
+        ? [{ tags: this.tags, timestamp: new Date() }]
+        : [],
+      events: this.events.map((e) => ({
+        name: e.eventName,
+        details: e.details,
+        timestamp: e.timestamp,
+      })),
+      txHashHints: this.txHashHints.map((hint) => ({
+        chain: CHAIN_MAP[hint.chain],
+        txHash: hint.txHash,
+        details: hint.details,
+        timestamp: hint.timestamp,
+      })),
     };
-
-    return await this.client._updateTrace(request);
   }
 
   /**
