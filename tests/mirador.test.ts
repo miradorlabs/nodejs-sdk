@@ -64,14 +64,14 @@ describe('Client', () => {
     it('should initialize NodeGrpcRpc with the correct URL and API key', () => {
       const apiKey = 'test-key';
       new Client(apiKey);
-      expect(NodeGrpcRpc).toHaveBeenCalledWith('ingest.mirador.org:443', apiKey);
+      expect(NodeGrpcRpc).toHaveBeenCalledWith('ingest.mirador.org:443', apiKey, true);
     });
 
     it('should use custom API URL if provided', () => {
       const apiKey = 'test-key';
       const customUrl = 'custom-gateway.example.com:50053';
       new Client(apiKey, { apiUrl: customUrl });
-      expect(NodeGrpcRpc).toHaveBeenCalledWith(customUrl, apiKey);
+      expect(NodeGrpcRpc).toHaveBeenCalledWith(customUrl, apiKey, true);
     });
   });
 
