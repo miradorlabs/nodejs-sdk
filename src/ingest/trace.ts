@@ -14,7 +14,7 @@ import type {
 } from 'mirador-gateway-ingest/proto/gateway/ingest/v1/ingest_gateway';
 import { Chain } from 'mirador-gateway-ingest/proto/gateway/ingest/v1/ingest_gateway';
 import { ResponseStatus_StatusCode } from 'mirador-gateway-ingest/proto/gateway/common/v1/status';
-import type { ChainName, TraceEvent, TxHashHint, AddEventOptions, StackTrace, EIP1193Provider, TxHintOptions, TransactionLike, TransactionRequest } from './types';
+import type { ChainName, TraceEvent, TxHashHint, SafeMsgHintData, AddEventOptions, StackTrace, EIP1193Provider, TxHintOptions, TransactionLike, TransactionRequest } from './types';
 import { captureStackTrace, formatStackTrace } from './stacktrace';
 import { chainIdToName } from './chains';
 
@@ -86,6 +86,7 @@ export class Trace {
   private tags: string[] = [];
   private events: TraceEvent[] = [];
   private txHashHints: TxHashHint[] = [];
+  private safeMsgHints: SafeMsgHintData[] = [];
   private client: TraceSubmitter;
   private traceId: string | null = null;
   private keepAliveTimer: NodeJS.Timeout | null = null;
@@ -321,6 +322,28 @@ export class Trace {
 
     this.txHashHints.push({
       txHash,
+      chain,
+      details,
+      timestamp: new Date(),
+    });
+    return this;
+  }
+
+  /**
+   * Add a Safe message hint for tracking Safe multisig message confirmations.
+   * @param msgHint The Safe message hash to track
+   * @param chain Chain name (e.g., "ethereum", "polygon", "base")
+   * @param details Optional details string
+   * @returns This trace builder for chaining
+   */
+  addSafeMsgHint(msgHint: string, chain: ChainName, details?: string): this {
+    if (this.closed) {
+      console.warn('[MiradorTrace] Trace is closed, ignoring addSafeMsgHint');
+      return this;
+    }
+
+    this.safeMsgHints.push({
+      messageHash: msgHint,
       chain,
       details,
       timestamp: new Date(),
@@ -654,6 +677,12 @@ export class Trace {
       txHashHints: this.txHashHints.map((hint) => ({
         chain: CHAIN_MAP[hint.chain],
         txHash: hint.txHash,
+        details: hint.details,
+        timestamp: hint.timestamp,
+      })),
+      safeMsgHints: this.safeMsgHints.map((hint) => ({
+        chain: CHAIN_MAP[hint.chain],
+        messageHash: hint.messageHash,
         details: hint.details,
         timestamp: hint.timestamp,
       })),

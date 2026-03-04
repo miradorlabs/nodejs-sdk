@@ -12,8 +12,9 @@ import { Client, Trace, ChainName } from '../src/ingest';
 import * as readline from 'readline';
 
 // Configuration
-const API_KEY = process.env.MIRADOR_API_KEY;
-const API_URL = process.env.GRPC_BASE_URL_API || 'ingest-gateway-dev.mirador.org:443';
+const API_KEY = process.env.MIRADOR_API_KEY || '';
+const API_URL = process.env.GRPC_BASE_URL_API || 'localhost:50053';
+const USE_SSL = API_URL.endsWith(':443');
 
 // State
 let currentTrace: Trace | null = null;
@@ -41,7 +42,7 @@ const log = {
 const VALID_CHAINS: ChainName[] = ['ethereum', 'polygon', 'arbitrum', 'base', 'optimism', 'bsc'];
 
 // Initialize client
-const client = new Client(API_KEY, { apiUrl: API_URL });
+const client = new Client(API_KEY, { apiUrl: API_URL, useSsl: USE_SSL });
 
 // Parse value (number, boolean, JSON, or string)
 function parseValue(value: string): string | number | boolean | object {
@@ -131,6 +132,24 @@ function tx(hash: string, chain: string, details?: string) {
   log.success(`Added tx hint: ${hash} on ${chain}`);
 }
 
+function safemsg(msgHash: string, chain: string, details?: string) {
+  if (!currentTrace) {
+    log.error('No trace. Run "create <name>" first');
+    return;
+  }
+  if (!msgHash || !chain) {
+    log.error('Usage: safemsg <messageHash> <chain> [details]');
+    log.info(`Chains: ${VALID_CHAINS.join(', ')}`);
+    return;
+  }
+  if (!VALID_CHAINS.includes(chain as ChainName)) {
+    log.error(`Invalid chain. Use: ${VALID_CHAINS.join(', ')}`);
+    return;
+  }
+  currentTrace.addSafeMsgHint(msgHash, chain as ChainName, details);
+  log.success(`Added safe msg hint: ${msgHash} on ${chain}`);
+}
+
 async function submit() {
   if (!currentTrace) {
     log.error('No trace. Run "create <name>" first');
@@ -182,6 +201,7 @@ ${c.bold}Commands:${c.reset}
   ${c.green}tag <name>${c.reset}                 Add a tag
   ${c.green}event <name> [details]${c.reset}     Add an event
   ${c.green}tx <hash> <chain> [details]${c.reset} Add a transaction hint
+  ${c.green}safemsg <hash> <chain> [details]${c.reset} Add a Safe message hint
   ${c.green}submit${c.reset}                     Submit the trace
   ${c.green}close [reason]${c.reset}             Close the trace
   ${c.green}status${c.reset}                     Show current trace status
@@ -197,6 +217,7 @@ ${c.bold}Example:${c.reset}
   tag swap
   event wallet_connected '{"wallet":"MetaMask"}'
   tx 0x123... ethereum "Swap tx"
+  safemsg 0xabc... ethereum "Multisig approval"
   submit
   close "Completed"
 `);
@@ -269,6 +290,9 @@ async function interactive() {
         break;
       case 'tx':
         tx(args[1], args[2], args.slice(3).join(' '));
+        break;
+      case 'safemsg':
+        safemsg(args[1], args[2], args.slice(3).join(' '));
         break;
       case 'submit':
         await submit();
