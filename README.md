@@ -18,6 +18,7 @@ npm install @miradorlabs/nodejs-sdk
 - **Stack Trace Capture** - Automatic or manual capture of call stack for debugging
 - **TypeScript Support** - Full type definitions included
 - **Multiple Transaction Hints** - Support for multiple blockchain transaction correlations
+- **Safe Multisig Tracking** - Track Safe message confirmations with `addSafeMsgHint()`
 
 ## Quick Start
 
@@ -212,6 +213,21 @@ trace.addTxHint('0x123...', 'ethereum', 'Main transaction')
 | `chain` | `ChainName` | Chain name: `'ethereum'` \| `'polygon'` \| `'arbitrum'` \| `'base'` \| `'optimism'` \| `'bsc'` |
 | `details` | `string` | Optional details about the transaction |
 
+#### `addSafeMsgHint(msgHint, chain, details?)`
+
+Add a Safe message hint for tracking Safe multisig message confirmations. Mirador will monitor the Safe contract for confirmation events related to the given message hash.
+
+```typescript
+trace.addSafeMsgHint('0xmsgHash...', 'ethereum')
+     .addSafeMsgHint('0xotherHash...', 'base', 'Token approval')
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `msgHint` | `string` | The Safe message hash to track |
+| `chain` | `ChainName` | Chain name: `'ethereum'` \| `'polygon'` \| `'arbitrum'` \| `'base'` \| `'optimism'` \| `'bsc'` |
+| `details` | `string` | Optional details about the message |
+
 #### `addTxInputData(inputData)`
 
 Add transaction input data (calldata) as a trace event. This is the hex-encoded data field from a transaction, useful for debugging failed transactions where the calldata is still available even though the transaction reverted.
@@ -262,7 +278,7 @@ await trace.close('User completed workflow');
 Returns: `Promise<void>`
 
 **Important:** Once a trace is closed:
-- All method calls (`addAttribute`, `addEvent`, `addTag`, `addTxHint`) will be ignored with a warning
+- All method calls (`addAttribute`, `addEvent`, `addTag`, `addTxHint`, `addSafeMsgHint`) will be ignored with a warning
 - The keep-alive timer will be stopped
 - A close request will be sent to the server
 
@@ -505,6 +521,7 @@ mirador> attr user 0xabc123
 mirador> tag swap
 mirador> event wallet_connected '{"wallet":"MetaMask"}'
 mirador> tx 0x123... ethereum
+mirador> safemsg 0xabc... ethereum "Multisig approval"
 mirador> submit
 mirador> close "Completed"
 ```

@@ -19,6 +19,7 @@ export type {
   ChainName,
   TraceEvent,
   TxHashHint,
+  SafeMsgHintData,
   TraceOptions,
   AddEventOptions,
   StackFrame,

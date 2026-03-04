@@ -33,10 +33,12 @@ export class NodeGrpcRpc implements Rpc {
   private client: grpc.Client;
   private apiKey?: string;
 
-  constructor(url: string, apiKey?: string) {
+  constructor(url: string, apiKey?: string, useSsl = true) {
     this.apiKey = apiKey;
     // Create a single reusable client with connection pooling
-    const credentials = grpc.ChannelCredentials.createSsl();
+    const credentials = useSsl
+      ? grpc.ChannelCredentials.createSsl()
+      : grpc.ChannelCredentials.createInsecure();
     this.client = new grpc.Client(url, credentials, {
       'grpc.keepalive_time_ms': 30000,
       'grpc.keepalive_timeout_ms': 10000,

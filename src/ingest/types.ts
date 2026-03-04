@@ -55,6 +55,8 @@ export interface ClientOptions {
   keepAliveIntervalMs?: number;
   /** EIP-1193 provider to use for transaction operations */
   provider?: EIP1193Provider;
+  /** Use SSL for gRPC connection (default: true, set false for local development) */
+  useSsl?: boolean;
 }
 
 /**
@@ -76,6 +78,16 @@ export interface TraceEvent {
  */
 export interface TxHashHint {
   txHash: string;
+  chain: ChainName;
+  details?: string;
+  timestamp: Date;
+}
+
+/**
+ * Safe message hint for Safe multisig message tracking
+ */
+export interface SafeMsgHintData {
+  messageHash: string;
   chain: ChainName;
   details?: string;
   timestamp: Date;

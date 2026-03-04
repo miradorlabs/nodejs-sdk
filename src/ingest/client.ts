@@ -43,7 +43,7 @@ export class Client {
     this.apiUrl = options?.apiUrl || DEFAULT_API_URL;
     this.keepAliveIntervalMs = options?.keepAliveIntervalMs || DEFAULT_KEEP_ALIVE_INTERVAL_MS;
     this.provider = options?.provider;
-    this.rpc = new NodeGrpcRpc(this.apiUrl, apiKey);
+    this.rpc = new NodeGrpcRpc(this.apiUrl, apiKey, options?.useSsl ?? true);
   }
 
   /**
