@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.4.0](https://github.com/miradorlabs/nodejs-sdk/compare/v1.3.0...v1.4.0) (2026-03-04)
+
+
+### Features
+
+* add safe msg hint functionality to sdk ([c70f028](https://github.com/miradorlabs/nodejs-sdk/commit/c70f02859eba48ad4cf77a91651a8453266abddd))
+* add safe msg hint functionality to sdk ([9e5ed6c](https://github.com/miradorlabs/nodejs-sdk/commit/9e5ed6cfe17cbe496fd94ea0d64e0267498b6fd9))
+
 ## [1.3.0](https://github.com/miradorlabs/nodejs-sdk/compare/v1.2.0...v1.3.0) (2026-02-27)
 
 
