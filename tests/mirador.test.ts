@@ -25,9 +25,16 @@ describe('Client', () => {
     // Create a new Client instance
     client = new Client("test-api-key");
 
-    // Create mock for IngestGatewayServiceClientImpl
+    // Create mock for IngestGatewayServiceClientImpl with defaults
+    // UpdateTrace, CloseTrace, KeepAlive are needed because auto-flush (via scheduleFlush)
+    // can trigger CreateTrace/UpdateTrace asynchronously during tests.
     mockApiGatewayClient = {
       CreateTrace: jest.fn(),
+      UpdateTrace: jest.fn().mockResolvedValue({
+        status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
+      }),
+      CloseTrace: jest.fn().mockResolvedValue({ accepted: true }),
+      KeepAlive: jest.fn().mockResolvedValue({ accepted: true }),
     } as unknown as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>;
 
     // Mock the IngestGatewayServiceClientImpl constructor
@@ -1353,6 +1360,13 @@ describe('Client', () => {
 
     beforeEach(() => {
       mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+      // Mock UpdateTrace for auto-flush scenarios where sendTransaction triggers
+      // scheduleFlush via addEvent, causing CreateTrace to resolve before create()
+      // is called — making create() route through UpdateTrace instead.
+      (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).UpdateTrace =
+        jest.fn().mockResolvedValue({ status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined } });
+      (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).CloseTrace =
+        jest.fn().mockResolvedValue({ accepted: true });
 
       ethProvider = {
         request: jest.fn().mockImplementation(async (args: { method: string }) => {
@@ -1488,10 +1502,14 @@ describe('Client', () => {
 
       await trace.create();
 
-      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
-      const sentEvent = calls.data?.events?.find((e: { name?: string; details?: string }) => e.name === 'tx:sent');
+      // With auto-flush, tx:sent ends up in UpdateTrace (tx:send was auto-flushed via CreateTrace)
+      const allEvents = [
+        ...(mockApiGatewayClient.CreateTrace.mock.calls.flatMap((call: [{ data?: { events?: { name?: string; details?: string }[] } }]) => call[0].data?.events ?? [])),
+        ...((mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).UpdateTrace.mock.calls.flatMap((call: [{ data?: { events?: { name?: string; details?: string }[] } }]) => call[0].data?.events ?? [])),
+      ];
+      const sentEvent = allEvents.find((e) => e.name === 'tx:sent');
       expect(sentEvent).toBeDefined();
-      const sentDetails = JSON.parse(sentEvent.details);
+      const sentDetails = JSON.parse(sentEvent!.details!);
       expect(sentDetails.txHash).toBe('0xethhash');
     });
 
@@ -1517,10 +1535,14 @@ describe('Client', () => {
 
       await trace.create();
 
-      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
-      const errorEvent = calls.data?.events?.find((e: { name?: string; details?: string }) => e.name === 'tx:error');
+      // With auto-flush, events may be split across CreateTrace and UpdateTrace
+      const allEvents = [
+        ...(mockApiGatewayClient.CreateTrace.mock.calls.flatMap((call: [{ data?: { events?: { name?: string; details?: string }[] } }]) => call[0].data?.events ?? [])),
+        ...((mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).UpdateTrace.mock.calls.flatMap((call: [{ data?: { events?: { name?: string; details?: string }[] } }]) => call[0].data?.events ?? [])),
+      ];
+      const errorEvent = allEvents.find((e) => e.name === 'tx:error');
       expect(errorEvent).toBeDefined();
-      const errorDetails = JSON.parse(errorEvent.details);
+      const errorDetails = JSON.parse(errorEvent!.details!);
       expect(errorDetails.code).toBe(4001);
       expect(errorDetails.data).toBe('0xrevertdata');
       expect(errorDetails.message).toBe('User rejected');
@@ -1558,9 +1580,13 @@ describe('Client', () => {
 
       await trace.create();
 
-      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
-      const sendEvents = calls.data?.events?.filter((e: { name?: string; details?: string }) => e.name === 'tx:send');
-      const sentEvents = calls.data?.events?.filter((e: { name?: string; details?: string }) => e.name === 'tx:sent');
+      // With auto-flush, events may be split across CreateTrace and UpdateTrace calls
+      const allEvents = [
+        ...(mockApiGatewayClient.CreateTrace.mock.calls.flatMap((call: [{ data?: { events?: { name?: string; details?: string }[] } }]) => call[0].data?.events ?? [])),
+        ...((mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).UpdateTrace.mock.calls.flatMap((call: [{ data?: { events?: { name?: string; details?: string }[] } }]) => call[0].data?.events ?? [])),
+      ];
+      const sendEvents = allEvents.filter((e) => e.name === 'tx:send');
+      const sentEvents = allEvents.filter((e) => e.name === 'tx:sent');
       expect(sendEvents).toHaveLength(2);
       expect(sentEvents).toHaveLength(2);
     });
@@ -1977,6 +2003,216 @@ describe('Client', () => {
       expect((mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).CloseTrace).toHaveBeenCalledWith(
         expect.objectContaining({ traceId: 'server-assigned-id', text: 'finished' })
       );
+    });
+  });
+
+  describe('flush()', () => {
+    const flushMicrotasks = () => new Promise<void>(resolve => queueMicrotask(resolve));
+    const flushPromises = () => new Promise<void>(resolve => setTimeout(resolve, 0));
+
+    it('should auto-flush via microtask when builder methods are called', async () => {
+      const mockResponse: apiGateway.CreateTraceResponse = {
+        status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
+        traceId: 'auto-flush-id',
+      };
+      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+
+      client.trace({ name: 'auto-flush', captureStackTrace: false })
+        .addAttribute('key', 'value');
+
+      // Not flushed yet (microtask hasn't run)
+      expect(mockApiGatewayClient.CreateTrace).not.toHaveBeenCalled();
+
+      // Flush the microtask + promise queues
+      await flushMicrotasks();
+      await flushPromises();
+
+      expect(mockApiGatewayClient.CreateTrace).toHaveBeenCalledTimes(1);
+      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      expect(calls.data?.attributes?.[0]?.attributes).toEqual({ key: 'value' });
+    });
+
+    it('should batch multiple builder calls in the same tick into a single flush', async () => {
+      const mockResponse: apiGateway.CreateTraceResponse = {
+        status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
+        traceId: 'batch-flush-id',
+      };
+      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+
+      client.trace({ name: 'batch', captureStackTrace: false })
+        .addAttribute('a', '1')
+        .addAttribute('b', '2')
+        .addTag('tag1')
+        .addEvent('evt1');
+
+      await flushMicrotasks();
+      await flushPromises();
+
+      // All data should be in a single CreateTrace call
+      expect(mockApiGatewayClient.CreateTrace).toHaveBeenCalledTimes(1);
+      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      expect(calls.data?.attributes?.[0]?.attributes).toEqual({ a: '1', b: '2' });
+      expect(calls.data?.tags?.[0]?.tags).toEqual(['tag1']);
+      expect(calls.data?.events).toHaveLength(1);
+    });
+
+    it('should send UpdateTrace on subsequent flushes after trace is created', async () => {
+      const mockCreateResponse: apiGateway.CreateTraceResponse = {
+        status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
+        traceId: 'update-flush-id',
+      };
+      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockCreateResponse);
+
+      const mockUpdateResponse: apiGateway.UpdateTraceResponse = {
+        status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
+      };
+      (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).UpdateTrace = jest.fn().mockResolvedValue(mockUpdateResponse);
+
+      const trace = client.trace({ name: 'update-test', captureStackTrace: false });
+      trace.addAttribute('initial', 'data');
+
+      // First flush → CreateTrace
+      await flushMicrotasks();
+      await flushPromises();
+      expect(mockApiGatewayClient.CreateTrace).toHaveBeenCalledTimes(1);
+
+      // Add more data → should trigger UpdateTrace
+      trace.addEvent('step2');
+      await flushMicrotasks();
+      await flushPromises();
+
+      expect((mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).UpdateTrace).toHaveBeenCalledTimes(1);
+      const updateCall = (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).UpdateTrace.mock.calls[0][0];
+      expect(updateCall.traceId).toBe('update-flush-id');
+      expect(updateCall.data?.events).toHaveLength(1);
+      expect(updateCall.data?.events?.[0]?.name).toBe('step2');
+    });
+
+    it('should clear pending data after flush so subsequent flushes do not re-send', async () => {
+      const mockCreateResponse: apiGateway.CreateTraceResponse = {
+        status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
+        traceId: 'clear-pending-id',
+      };
+      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockCreateResponse);
+
+      const mockUpdateResponse: apiGateway.UpdateTraceResponse = {
+        status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
+      };
+      (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).UpdateTrace = jest.fn().mockResolvedValue(mockUpdateResponse);
+
+      const trace = client.trace({ name: 'clear-test', captureStackTrace: false });
+      trace.addAttribute('first', 'value');
+
+      await flushMicrotasks();
+      await flushPromises();
+
+      // Second flush with new data only
+      trace.addAttribute('second', 'value');
+      await flushMicrotasks();
+      await flushPromises();
+
+      const updateCall = (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).UpdateTrace.mock.calls[0][0];
+      // Should only have 'second', not 'first'
+      expect(updateCall.data?.attributes?.[0]?.attributes).toEqual({ second: 'value' });
+    });
+
+    it('should ignore flush on a closed trace', async () => {
+      const mockCreateResponse: apiGateway.CreateTraceResponse = {
+        status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
+        traceId: 'closed-flush-id',
+      };
+      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockCreateResponse);
+      (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).CloseTrace = jest.fn().mockResolvedValue({ accepted: true });
+
+      const trace = client.trace({ name: 'close-test', captureStackTrace: false });
+      await trace.create();
+      await trace.close();
+
+      mockApiGatewayClient.CreateTrace.mockClear();
+      trace.flush();
+
+      await flushMicrotasks();
+      await flushPromises();
+
+      expect(mockApiGatewayClient.CreateTrace).not.toHaveBeenCalled();
+      expect(mockConsoleWarn).toHaveBeenCalledWith('[MiradorTrace] Trace is closed. Ignoring flush call.');
+    });
+
+    it('should return void from flush (fire-and-forget)', () => {
+      const trace = client.trace({ name: 'void-flush', captureStackTrace: false });
+      trace.addAttribute('key', 'value');
+      const result = trace.flush();
+      expect(result).toBeUndefined();
+    });
+
+    it('create() should remain backward compatible by calling flush and awaiting', async () => {
+      const mockResponse: apiGateway.CreateTraceResponse = {
+        status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
+        traceId: 'create-compat-id',
+      };
+      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+
+      const traceId = await client.trace({ name: 'compat', captureStackTrace: false })
+        .addAttribute('user', 'alice')
+        .create();
+
+      expect(traceId).toBe('create-compat-id');
+      expect(mockApiGatewayClient.CreateTrace).toHaveBeenCalledTimes(1);
+    });
+
+    it('close() should drain flush queue before sending CloseTrace', async () => {
+      const mockCreateResponse: apiGateway.CreateTraceResponse = {
+        status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
+        traceId: 'drain-close-id',
+      };
+      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockCreateResponse);
+      (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).CloseTrace = jest.fn().mockResolvedValue({ accepted: true });
+
+      const trace = client.trace({ name: 'drain-test', captureStackTrace: false });
+      trace.addAttribute('key', 'value');
+      // flush is auto-scheduled but not yet executed
+
+      // close() should await the pending flush before sending CloseTrace
+      await trace.close('done');
+
+      // CreateTrace should have been called (flush drained)
+      expect(mockApiGatewayClient.CreateTrace).toHaveBeenCalledTimes(1);
+      // CloseTrace should have been called after
+      expect((mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).CloseTrace).toHaveBeenCalledWith(
+        expect.objectContaining({ traceId: 'drain-close-id', text: 'done' })
+      );
+    });
+
+    it('should include stack trace attributes only on first flush', async () => {
+      const mockCreateResponse: apiGateway.CreateTraceResponse = {
+        status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
+        traceId: 'stack-first-flush-id',
+      };
+      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockCreateResponse);
+
+      const mockUpdateResponse: apiGateway.UpdateTraceResponse = {
+        status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
+      };
+      (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).UpdateTrace = jest.fn().mockResolvedValue(mockUpdateResponse);
+
+      const trace = client.trace({ name: 'stack-test', captureStackTrace: true });
+      trace.addTag('first');
+
+      await flushMicrotasks();
+      await flushPromises();
+
+      // First flush should have source.* attributes
+      const createCall = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      const attrs = createCall.data?.attributes?.[0]?.attributes;
+      expect(attrs?.['source.stack_trace']).toBeDefined();
+
+      // Second flush should NOT have source.* attributes
+      trace.addTag('second');
+      await flushMicrotasks();
+      await flushPromises();
+
+      const updateCall = (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).UpdateTrace.mock.calls[0][0];
+      expect(updateCall.data?.attributes).toEqual([]);
     });
   });
 });

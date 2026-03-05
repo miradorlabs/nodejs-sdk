@@ -29,7 +29,8 @@ This starts an interactive session where you can build and submit traces.
 | `tag <name>` | Add a tag |
 | `event <name> [details]` | Add an event |
 | `tx <hash> <chain> [details]` | Add a transaction hint |
-| `submit` | Submit the trace to the server |
+| `flush` | Flush pending data to the server (fire-and-forget) |
+| `submit` | Submit the trace (deprecated, use flush) |
 | `close [reason]` | Close the trace |
 | `status` | Show current trace status |
 | `help` | Show available commands |
@@ -63,9 +64,9 @@ mirador> event wallet_connected '{"wallet":"MetaMask"}'
 mirador> tx 0x123abc... ethereum "Swap transaction"
 ✓ Added tx hint: 0x123abc... on ethereum
 
-mirador> submit
-ℹ Submitting trace...
-✓ Trace submitted! ID: abc123-def456-...
+mirador> flush
+✓ Flush triggered (fire-and-forget)
+ℹ Trace ID assigned: abc123-def456-...
 
 mirador> close "Completed successfully"
 ✓ Trace closed: Completed successfully

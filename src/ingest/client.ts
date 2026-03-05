@@ -85,15 +85,17 @@ export class Client {
   /**
    * Create a new trace builder
    *
+   * Builder methods auto-flush via microtask batching — no need to call create().
+   *
    * Example usage:
    * ```typescript
-   * const traceId = await client.trace({ name: "swap_execution" })
+   * const trace = client.trace({ name: "swap_execution" })
    *   .addAttribute("user", "0xabc...")
-   *   .addAttribute("slippage_bps", 25)
    *   .addTag("dex")
    *   .addEvent("wallet_connected", { wallet: "MetaMask" })
-   *   .addTxHint("0x123...", "ethereum")
-   *   .create();
+   *   .addTxHint("0x123...", "ethereum");
+   * // Data is auto-flushed at the end of the current JS tick.
+   * // Call trace.close() when the trace is complete.
    * ```
    *
    * @param options Trace configuration options

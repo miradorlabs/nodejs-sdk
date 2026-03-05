@@ -150,6 +150,23 @@ function safemsg(msgHash: string, chain: string, details?: string) {
   log.success(`Added safe msg hint: ${msgHash} on ${chain}`);
 }
 
+function flush() {
+  if (!currentTrace) {
+    log.error('No trace. Run "create <name>" first');
+    return;
+  }
+  currentTrace.flush();
+  log.success('Flush triggered (fire-and-forget)');
+  // Check for traceId after a short delay (flush is async internally)
+  setTimeout(() => {
+    const id = currentTrace?.getTraceId();
+    if (id && !traceId) {
+      traceId = id;
+      log.info(`Trace ID assigned: ${traceId}`);
+    }
+  }, 500);
+}
+
 async function submit() {
   if (!currentTrace) {
     log.error('No trace. Run "create <name>" first');
@@ -202,7 +219,8 @@ ${c.bold}Commands:${c.reset}
   ${c.green}event <name> [details]${c.reset}     Add an event
   ${c.green}tx <hash> <chain> [details]${c.reset} Add a transaction hint
   ${c.green}safemsg <hash> <chain> [details]${c.reset} Add a Safe message hint
-  ${c.green}submit${c.reset}                     Submit the trace
+  ${c.green}flush${c.reset}                      Flush pending data (fire-and-forget)
+  ${c.green}submit${c.reset}                     Submit the trace (deprecated, use flush)
   ${c.green}close [reason]${c.reset}             Close the trace
   ${c.green}status${c.reset}                     Show current trace status
   ${c.green}help${c.reset}                       Show this help
@@ -218,7 +236,7 @@ ${c.bold}Example:${c.reset}
   event wallet_connected '{"wallet":"MetaMask"}'
   tx 0x123... ethereum "Swap tx"
   safemsg 0xabc... ethereum "Multisig approval"
-  submit
+  flush
   close "Completed"
 `);
 }
@@ -293,6 +311,9 @@ async function interactive() {
         break;
       case 'safemsg':
         safemsg(args[1], args[2], args.slice(3).join(' '));
+        break;
+      case 'flush':
+        flush();
         break;
       case 'submit':
         await submit();
