@@ -10,6 +10,7 @@ npm install @miradorlabs/nodejs-sdk
 
 ## Features
 
+- **Auto-Flush** - Builder methods automatically batch and send data via microtask scheduling
 - **Fluent Builder Pattern** - Method chaining for creating traces
 - **Retry with Backoff** - Automatic retry with exponential backoff on network failures
 - **Keep-Alive** - Automatic periodic pings to maintain trace liveness (configurable interval)
@@ -25,10 +26,7 @@ npm install @miradorlabs/nodejs-sdk
 ```typescript
 import { Client } from '@miradorlabs/nodejs-sdk';
 
-// Create client with optional keep-alive configuration
-const client = new Client('your-api-key', {
-  keepAliveIntervalMs: 10000  // Default is 10 seconds
-});
+const client = new Client('your-api-key');
 
 const trace = client.trace({ name: 'SwapExecution' })
   .addAttribute('from', '0xabc...')
@@ -36,9 +34,9 @@ const trace = client.trace({ name: 'SwapExecution' })
   .addTags(['dex', 'swap'])
   .addEvent('quote_received', { provider: 'Uniswap' })
   .addEvent('transaction_signed')
-  .addTxHint('0xtxhash...', 'ethereum');  // Can add multiple tx hints
-
-const traceId = await trace.create();  // Keep-alive starts automatically
+  .addTxHint('0xtxhash...', 'ethereum');
+// Data is auto-flushed at the end of the current JS tick.
+// Call trace.close() when the trace is complete.
 
 // ... later, when done with the trace
 await trace.close('Transaction completed');
@@ -242,9 +240,26 @@ trace.addTxInputData('0xa9059cbb000000000000000000000000...')
 
 Returns: `this` for chaining
 
-#### `create()`
+#### `flush()`
 
-Submit the trace to the gateway. Keep-alive timer starts automatically after successful creation.
+Send pending data to the gateway. Fire-and-forget — returns immediately but maintains strict ordering internally.
+
+The first flush sends `CreateTrace`, subsequent flushes send `UpdateTrace`.
+
+```typescript
+trace.addEvent('important_milestone');
+trace.flush();  // Send immediately
+```
+
+Returns: `void`
+
+> **Note:** Builder methods automatically call `flush()` via microtask scheduling, so you rarely need to call it manually. All synchronous builder calls within the same JS tick are batched into a single flush.
+
+#### `create()` *(deprecated)*
+
+> **Deprecated:** Use `flush()` or rely on auto-flush instead. Kept for backward compatibility.
+
+Submit the trace to the gateway synchronously and return the trace ID. Keep-alive timer starts automatically after successful creation.
 
 ```typescript
 const traceId = await trace.create();
@@ -254,7 +269,7 @@ Returns: `Promise<string | undefined>` - The trace ID if successful, undefined i
 
 #### `getTraceId()`
 
-Get the trace ID (available after create() completes successfully).
+Get the trace ID (available after first flush completes successfully, or immediately if using `traceId` option / `setTraceId()`).
 
 ```typescript
 const traceId = trace.getTraceId();  // string | null
@@ -264,7 +279,7 @@ Returns: `string | null`
 
 #### `close(reason?)`
 
-Close the trace and stop all timers (keep-alive timer). After calling this method, all subsequent operations will be ignored.
+Close the trace and stop all timers. Flushes any pending data before sending the close request. After calling this method, all subsequent operations will be ignored.
 
 ```typescript
 await trace.close();
@@ -280,7 +295,7 @@ Returns: `Promise<void>`
 **Important:** Once a trace is closed:
 - All method calls (`addAttribute`, `addEvent`, `addTag`, `addTxHint`, `addSafeMsgHint`) will be ignored with a warning
 - The keep-alive timer will be stopped
-- A close request will be sent to the server
+- Any pending data will be flushed, then a close request will be sent to the server
 
 #### `isClosed()`
 
@@ -297,10 +312,7 @@ Returns: `boolean`
 ```typescript
 import { Client } from '@miradorlabs/nodejs-sdk';
 
-// Create client with custom keep-alive interval (optional)
-const client = new Client(process.env.MIRADOR_API_KEY, {
-  keepAliveIntervalMs: 15000  // Override default 10s interval
-});
+const client = new Client(process.env.MIRADOR_API_KEY);
 
 async function trackSwapExecution(userAddress: string, txHash: string) {
   const trace = client.trace({ name: 'SwapExecution' })
@@ -316,25 +328,18 @@ async function trackSwapExecution(userAddress: string, txHash: string) {
     .addTags(['swap', 'dex', 'ethereum'])
     .addEvent('quote_requested')
     .addEvent('quote_received', { price: 2500.50, provider: 'Uniswap' });
+  // → CreateTrace auto-flushed at end of current JS tick
 
   try {
-    const traceId = await trace.create();
-    // Keep-alive timer starts automatically
+    await processTransaction();
 
-    if (traceId) {
-      console.log('Trace created:', traceId);
+    // Add more data — auto-flushed as UpdateTrace
+    trace.addEvent('transaction_signed')
+         .addEvent('transaction_confirmed', { blockNumber: 12345678 })
+         .addTxHint(txHash, 'ethereum', 'Swap transaction');
 
-      // Simulate some processing
-      await processTransaction();
-
-      // Add transaction hint
-      trace.addEvent('transaction_signed')
-           .addEvent('transaction_confirmed', { blockNumber: 12345678 })
-           .addTxHint(txHash, 'ethereum', 'Swap transaction');
-
-      // Close the trace when done
-      await trace.close('Transaction completed successfully');
-    }
+    // Close the trace when done (flushes pending data first)
+    await trace.close('Transaction completed successfully');
   } catch (error) {
     await trace.close('Transaction failed');
     throw error;
@@ -370,15 +375,14 @@ async function sendTracedTransaction() {
     trace.addEvent('transaction_sent', { txHash: tx.hash })
          .addTxHint(tx.hash, 'ethereum')
          .addTxInputData(tx.data);  // record the calldata for debugging
+    // → auto-flushed
 
-    const traceId = await trace.create();
     const receipt = await tx.wait();
 
     trace.addEvent('transaction_confirmed', { blockNumber: receipt.blockNumber });
     await trace.close('Swap completed');
   } catch (error) {
     trace.addEvent('transaction_failed', { error: error.message });
-    await trace.create();
     await trace.close('Swap failed');
   }
 }
@@ -422,15 +426,14 @@ async function sendTracedTransaction() {
     trace.addEvent('transaction_sent', { txHash: hash })
          .addTxHint(hash, 'ethereum')
          .addTxInputData(calldata);  // record the calldata for debugging
+    // → auto-flushed
 
-    const traceId = await trace.create();
     const receipt = await publicClient.waitForTransactionReceipt({ hash });
 
     trace.addEvent('transaction_confirmed', { blockNumber: Number(receipt.blockNumber) });
     await trace.close('Transfer completed');
   } catch (error) {
     trace.addEvent('transaction_failed', { error: error.message });
-    await trace.create();
     await trace.close('Transfer failed');
   }
 }
@@ -522,7 +525,7 @@ mirador> tag swap
 mirador> event wallet_connected '{"wallet":"MetaMask"}'
 mirador> tx 0x123... ethereum
 mirador> safemsg 0xabc... ethereum "Multisig approval"
-mirador> submit
+mirador> flush
 mirador> close "Completed"
 ```
 
