@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.5.0](https://github.com/miradorlabs/nodejs-sdk/compare/v1.4.0...v1.5.0) (2026-03-05)
+
+
+### Features
+
+* add flush method to sdk and deprecate create ([ff204d2](https://github.com/miradorlabs/nodejs-sdk/commit/ff204d268211ea0bab3b3e767a929f7eb3334a2a))
+* add flush method to sdk and deprecate create ([fc8b33c](https://github.com/miradorlabs/nodejs-sdk/commit/fc8b33ccd8db4eae65ec033dc3e5f2605cb9929c))
+
 ## [1.4.0](https://github.com/miradorlabs/nodejs-sdk/compare/v1.3.0...v1.4.0) (2026-03-04)
 
 
