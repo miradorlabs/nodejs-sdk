@@ -2118,10 +2118,10 @@ describe('Client', () => {
       expect(mockApiGatewayClient.KeepAlive.mock.calls.length).toBeGreaterThan(0);
     });
 
-    it('backend can opt into keepalive with keepAlive: true if it takes ownership', async () => {
+    it('backend can opt into keepalive with autoKeepAlive: true if it takes ownership', async () => {
       const backendTrace = client.trace({
         traceId: 'frontend-trace-abc',
-        keepAlive: true,
+        autoKeepAlive: true,
         captureStackTrace: false,
       });
 
@@ -2139,7 +2139,7 @@ describe('Client', () => {
     });
   });
 
-  describe('keepAlive option', () => {
+  describe('autoKeepAlive option', () => {
     beforeEach(() => jest.useFakeTimers());
     afterEach(() => {
       jest.clearAllTimers();
@@ -2171,8 +2171,8 @@ describe('Client', () => {
       expect(mockApiGatewayClient.KeepAlive).toHaveBeenCalled();
     });
 
-    it('should start keep-alive when keepAlive: true overrides traceId default', async () => {
-      const trace = client.trace({ traceId: 'external-id', keepAlive: true, captureStackTrace: false });
+    it('should start keep-alive when autoKeepAlive: true overrides traceId default', async () => {
+      const trace = client.trace({ traceId: 'external-id', autoKeepAlive: true, captureStackTrace: false });
       trace.addAttribute('key', 'value');
       trace.flush();
 
@@ -2181,13 +2181,13 @@ describe('Client', () => {
       expect(mockApiGatewayClient.KeepAlive).toHaveBeenCalled();
     });
 
-    it('should NOT start keep-alive when keepAlive: false suppresses it for new trace', async () => {
+    it('should NOT start keep-alive when autoKeepAlive: false suppresses it for new trace', async () => {
       mockApiGatewayClient.CreateTrace.mockResolvedValue({
         status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
         traceId: 'new-trace-id',
       });
 
-      const trace = client.trace({ keepAlive: false, captureStackTrace: false });
+      const trace = client.trace({ autoKeepAlive: false, captureStackTrace: false });
       trace.addAttribute('key', 'value');
       trace.flush();
 

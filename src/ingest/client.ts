@@ -110,7 +110,7 @@ export class Client {
       retryBackoff: options?.retryBackoff ?? DEFAULT_RETRY_BACKOFF,
       keepAliveIntervalMs: this.keepAliveIntervalMs,
       provider: options?.provider ?? this.provider,
-      keepAlive: options?.keepAlive ?? !options?.traceId,
+      autoKeepAlive: options?.autoKeepAlive ?? !options?.traceId,
     });
   }
 }

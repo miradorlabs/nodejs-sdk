@@ -29,7 +29,7 @@ interface ResolvedTraceOptions {
   retryBackoff: number;
   keepAliveIntervalMs: number;
   provider?: EIP1193Provider;
-  keepAlive: boolean;
+  autoKeepAlive: boolean;
 }
 
 /**
@@ -112,7 +112,7 @@ export class Trace {
   private flushQueue: Promise<void> = Promise.resolve();
 
   // Keep-alive configuration
-  private keepAliveEnabled: boolean;
+  private autoKeepAlive: boolean;
   private keepAliveTimer: NodeJS.Timeout | null = null;
   private keepAliveIntervalMs: number;
 
@@ -128,7 +128,7 @@ export class Trace {
     this.client = client;
     this.name = options.name;
     this.traceId = options.traceId ?? null;
-    this.keepAliveEnabled = options.keepAlive;
+    this.autoKeepAlive = options.autoKeepAlive;
     this.keepAliveIntervalMs = options.keepAliveIntervalMs;
     this.maxRetries = options.maxRetries;
     this.retryBackoff = options.retryBackoff;
@@ -592,7 +592,7 @@ export class Trace {
           () => this.client._updateTrace(request),
           'UpdateTrace (resumed)'
         );
-        if (this.keepAliveEnabled) {
+        if (this.autoKeepAlive) {
           this.startKeepAlive();
         }
         return this.traceId;
@@ -621,7 +621,7 @@ export class Trace {
       }
 
       this.traceId = response.traceId || null;
-      if (this.traceId && this.keepAliveEnabled) {
+      if (this.traceId && this.autoKeepAlive) {
         this.startKeepAlive();
       }
       return response.traceId;
@@ -724,7 +724,7 @@ export class Trace {
       }
 
       this.traceId = response.traceId || null;
-      if (this.traceId && this.keepAliveEnabled) {
+      if (this.traceId && this.autoKeepAlive) {
         this.startKeepAlive();
       }
     } catch (err) {
@@ -747,7 +747,7 @@ export class Trace {
         () => this.client._updateTrace(request),
         'UpdateTrace'
       );
-      if (this.keepAliveEnabled) {
+      if (this.autoKeepAlive) {
         // Start keep-alive if not already running (e.g., first update for a resumed trace)
         this.startKeepAlive();
       }
