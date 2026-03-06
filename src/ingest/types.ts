@@ -133,6 +133,8 @@ export interface TraceOptions {
   retryBackoff?: number;
   /** EIP-1193 provider to use for transaction operations */
   provider?: EIP1193Provider;
+  /** Whether to send keep-alive pings. Defaults to true for new traces, false when resuming via traceId. */
+  keepAlive?: boolean;
 }
 
 /**

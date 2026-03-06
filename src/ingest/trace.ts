@@ -29,6 +29,7 @@ interface ResolvedTraceOptions {
   retryBackoff: number;
   keepAliveIntervalMs: number;
   provider?: EIP1193Provider;
+  keepAlive: boolean;
 }
 
 /**
@@ -111,6 +112,7 @@ export class Trace {
   private flushQueue: Promise<void> = Promise.resolve();
 
   // Keep-alive configuration
+  private keepAliveEnabled: boolean;
   private keepAliveTimer: NodeJS.Timeout | null = null;
   private keepAliveIntervalMs: number;
 
@@ -126,6 +128,7 @@ export class Trace {
     this.client = client;
     this.name = options.name;
     this.traceId = options.traceId ?? null;
+    this.keepAliveEnabled = options.keepAlive;
     this.keepAliveIntervalMs = options.keepAliveIntervalMs;
     this.maxRetries = options.maxRetries;
     this.retryBackoff = options.retryBackoff;
@@ -589,7 +592,9 @@ export class Trace {
           () => this.client._updateTrace(request),
           'UpdateTrace (resumed)'
         );
-        this.startKeepAlive();
+        if (this.keepAliveEnabled) {
+          this.startKeepAlive();
+        }
         return this.traceId;
       } catch (error) {
         console.error('[MiradorTrace] UpdateTrace error after retries (resumed trace):', error);
@@ -616,7 +621,7 @@ export class Trace {
       }
 
       this.traceId = response.traceId || null;
-      if (this.traceId) {
+      if (this.traceId && this.keepAliveEnabled) {
         this.startKeepAlive();
       }
       return response.traceId;
@@ -719,7 +724,7 @@ export class Trace {
       }
 
       this.traceId = response.traceId || null;
-      if (this.traceId) {
+      if (this.traceId && this.keepAliveEnabled) {
         this.startKeepAlive();
       }
     } catch (err) {
@@ -742,8 +747,10 @@ export class Trace {
         () => this.client._updateTrace(request),
         'UpdateTrace'
       );
-      // Start keep-alive if not already running (e.g., first update for a resumed trace)
-      this.startKeepAlive();
+      if (this.keepAliveEnabled) {
+        // Start keep-alive if not already running (e.g., first update for a resumed trace)
+        this.startKeepAlive();
+      }
     } catch (err) {
       console.error('[MiradorTrace] UpdateTrace error after retries:', err);
     }
@@ -806,9 +813,10 @@ export class Trace {
   }
 
   /**
-   * Start the keep-alive timer
+   * Start the keep-alive timer.
+   * Called automatically for new traces. Call manually to enable keepalive on resumed traces.
    */
-  private startKeepAlive(): void {
+  startKeepAlive(): void {
     if (this.keepAliveTimer || !this.traceId || this.closed) {
       return;
     }
@@ -821,7 +829,7 @@ export class Trace {
   /**
    * Stop the keep-alive timer
    */
-  private stopKeepAlive(): void {
+  stopKeepAlive(): void {
     if (this.keepAliveTimer) {
       clearInterval(this.keepAliveTimer);
       this.keepAliveTimer = null;

@@ -2006,6 +2006,231 @@ describe('Client', () => {
     });
   });
 
+  describe('zombie keepalive scenario (customer-reported)', () => {
+    /**
+     * Customer scenario: Frontend creates a trace and owns it. Backend grabs
+     * the frontend's traceId (e.g., via HTTP header) just to tag an event.
+     * Previously, the backend's flush() would start a keepalive timer that
+     * could never be stopped without calling close() — but close() is wrong
+     * because the frontend owns the trace. This caused "zombie keepalive"
+     * timers that ran indefinitely.
+     *
+     * The fix: when resuming a trace via traceId, keepalive defaults to false.
+     */
+
+    beforeEach(() => jest.useFakeTimers());
+    afterEach(() => {
+      jest.clearAllTimers();
+      jest.useRealTimers();
+    });
+
+    it('backend fire-and-forget update sends data but does not start keepalive', async () => {
+      // Simulate backend grabbing a frontend traceId to tag a single event
+      const backendTrace = client.trace({
+        traceId: 'frontend-trace-abc',
+        captureStackTrace: false,
+      });
+
+      backendTrace.addEvent('risk:check', 'score=0.3');
+      backendTrace.flush();
+      await jest.advanceTimersByTimeAsync(0);
+
+      // Verify the update was sent
+      expect(mockApiGatewayClient.UpdateTrace).toHaveBeenCalledTimes(1);
+      const request = mockApiGatewayClient.UpdateTrace.mock.calls[0][0];
+      expect(request.traceId).toBe('frontend-trace-abc');
+
+      // Let 60 seconds pass — no zombie keepalive should fire
+      mockApiGatewayClient.KeepAlive.mockClear();
+      await jest.advanceTimersByTimeAsync(60000);
+      expect(mockApiGatewayClient.KeepAlive).not.toHaveBeenCalled();
+
+      // The trace can be garbage collected — no close() needed
+      // (no timers holding a reference)
+      expect(backendTrace.isClosed()).toBe(false);
+    });
+
+    it('backend fire-and-forget does not require close() to avoid zombie timers', async () => {
+      // The core customer complaint: after flush(), there was no way to clean
+      // up without close(), but close() was wrong because they didn't own the trace.
+      const backendTrace = client.trace({
+        traceId: 'frontend-trace-xyz',
+        captureStackTrace: false,
+      });
+
+      // Multiple fire-and-forget updates (e.g., enriching from different services)
+      backendTrace.addAttribute('risk.score', '0.3');
+      backendTrace.flush();
+      await jest.advanceTimersByTimeAsync(0);
+
+      backendTrace.addEvent('compliance:checked');
+      backendTrace.flush();
+      await jest.advanceTimersByTimeAsync(0);
+
+      backendTrace.addTag('enriched');
+      backendTrace.flush();
+      await jest.advanceTimersByTimeAsync(0);
+
+      // Three updates sent, zero keepalives
+      expect(mockApiGatewayClient.UpdateTrace).toHaveBeenCalledTimes(3);
+      expect(mockApiGatewayClient.KeepAlive).not.toHaveBeenCalled();
+
+      // Wait a long time — still no keepalive
+      await jest.advanceTimersByTimeAsync(120000);
+      expect(mockApiGatewayClient.KeepAlive).not.toHaveBeenCalled();
+
+      // close() was never called — trace is not closed
+      expect(backendTrace.isClosed()).toBe(false);
+    });
+
+    it('owner trace keeps keepalive running while non-owner does not', async () => {
+      mockApiGatewayClient.CreateTrace.mockResolvedValue({
+        status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
+        traceId: 'owner-created-id',
+      });
+
+      // Owner creates the trace
+      const ownerTrace = client.trace({ name: 'UserSwap', captureStackTrace: false });
+      ownerTrace.addAttribute('wallet', '0xabc');
+      ownerTrace.flush();
+      await jest.advanceTimersByTimeAsync(15000);
+
+      // Owner should have keepalive running
+      expect(mockApiGatewayClient.KeepAlive).toHaveBeenCalled();
+      const ownerKeepAliveCount = mockApiGatewayClient.KeepAlive.mock.calls.length;
+
+      // Non-owner resumes the same trace
+      const nonOwnerTrace = client.trace({
+        traceId: 'owner-created-id',
+        captureStackTrace: false,
+      });
+      nonOwnerTrace.addEvent('backend:enriched');
+      nonOwnerTrace.flush();
+
+      // Advance time — only the owner's keepalive should fire more
+      mockApiGatewayClient.KeepAlive.mockClear();
+      await jest.advanceTimersByTimeAsync(30000);
+
+      // All keepalive calls should be from the owner (traceId matches)
+      for (const call of mockApiGatewayClient.KeepAlive.mock.calls) {
+        expect(call[0].traceId).toBe('owner-created-id');
+      }
+      // Owner keepalive is still ticking
+      expect(mockApiGatewayClient.KeepAlive.mock.calls.length).toBeGreaterThan(0);
+    });
+
+    it('backend can opt into keepalive with keepAlive: true if it takes ownership', async () => {
+      const backendTrace = client.trace({
+        traceId: 'frontend-trace-abc',
+        keepAlive: true,
+        captureStackTrace: false,
+      });
+
+      backendTrace.addEvent('ownership:transferred');
+      backendTrace.flush();
+      await jest.advanceTimersByTimeAsync(15000);
+
+      expect(mockApiGatewayClient.KeepAlive).toHaveBeenCalled();
+
+      // Backend can cleanly close when done
+      await backendTrace.close('backend done');
+      mockApiGatewayClient.KeepAlive.mockClear();
+      await jest.advanceTimersByTimeAsync(15000);
+      expect(mockApiGatewayClient.KeepAlive).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('keepAlive option', () => {
+    beforeEach(() => jest.useFakeTimers());
+    afterEach(() => {
+      jest.clearAllTimers();
+      jest.useRealTimers();
+    });
+
+    it('should NOT start keep-alive when traceId is provided (default behavior)', async () => {
+      const trace = client.trace({ traceId: 'external-id', captureStackTrace: false });
+      trace.addAttribute('key', 'value');
+      trace.flush();
+
+      await jest.advanceTimersByTimeAsync(15000);
+
+      expect(mockApiGatewayClient.KeepAlive).not.toHaveBeenCalled();
+    });
+
+    it('should start keep-alive for new traces (default behavior)', async () => {
+      mockApiGatewayClient.CreateTrace.mockResolvedValue({
+        status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
+        traceId: 'new-trace-id',
+      });
+
+      const trace = client.trace({ captureStackTrace: false });
+      trace.addAttribute('key', 'value');
+      trace.flush();
+
+      await jest.advanceTimersByTimeAsync(15000);
+
+      expect(mockApiGatewayClient.KeepAlive).toHaveBeenCalled();
+    });
+
+    it('should start keep-alive when keepAlive: true overrides traceId default', async () => {
+      const trace = client.trace({ traceId: 'external-id', keepAlive: true, captureStackTrace: false });
+      trace.addAttribute('key', 'value');
+      trace.flush();
+
+      await jest.advanceTimersByTimeAsync(15000);
+
+      expect(mockApiGatewayClient.KeepAlive).toHaveBeenCalled();
+    });
+
+    it('should NOT start keep-alive when keepAlive: false suppresses it for new trace', async () => {
+      mockApiGatewayClient.CreateTrace.mockResolvedValue({
+        status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
+        traceId: 'new-trace-id',
+      });
+
+      const trace = client.trace({ keepAlive: false, captureStackTrace: false });
+      trace.addAttribute('key', 'value');
+      trace.flush();
+
+      await jest.advanceTimersByTimeAsync(15000);
+
+      expect(mockApiGatewayClient.KeepAlive).not.toHaveBeenCalled();
+    });
+
+    it('should allow manual startKeepAlive() on a resumed trace', async () => {
+      const trace = client.trace({ traceId: 'external-id', captureStackTrace: false });
+      trace.addAttribute('key', 'value');
+      trace.flush();
+      await jest.advanceTimersByTimeAsync(0);
+
+      expect(mockApiGatewayClient.KeepAlive).not.toHaveBeenCalled();
+
+      trace.startKeepAlive();
+      await jest.advanceTimersByTimeAsync(15000);
+
+      expect(mockApiGatewayClient.KeepAlive).toHaveBeenCalled();
+    });
+
+    it('should allow manual stopKeepAlive() on a new trace', async () => {
+      mockApiGatewayClient.CreateTrace.mockResolvedValue({
+        status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
+        traceId: 'new-trace-id',
+      });
+
+      const trace = client.trace({ captureStackTrace: false });
+      trace.addAttribute('key', 'value');
+      trace.flush();
+      await jest.advanceTimersByTimeAsync(0);
+
+      trace.stopKeepAlive();
+      mockApiGatewayClient.KeepAlive.mockClear();
+
+      await jest.advanceTimersByTimeAsync(15000);
+
+      expect(mockApiGatewayClient.KeepAlive).not.toHaveBeenCalled();
+    });
+  });
+
   describe('flush()', () => {
     const flushMicrotasks = () => new Promise<void>(resolve => queueMicrotask(resolve));
     const flushPromises = () => new Promise<void>(resolve => setTimeout(resolve, 0));
