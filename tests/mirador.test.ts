@@ -2097,7 +2097,6 @@ describe('Client', () => {
 
       // Owner should have keepalive running
       expect(mockApiGatewayClient.KeepAlive).toHaveBeenCalled();
-      const ownerKeepAliveCount = mockApiGatewayClient.KeepAlive.mock.calls.length;
 
       // Non-owner resumes the same trace
       const nonOwnerTrace = client.trace({
