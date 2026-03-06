@@ -13,15 +13,31 @@ import type {
 } from 'mirador-gateway-ingest/proto/gateway/ingest/v1/ingest_gateway';
 import { IngestGatewayServiceClientImpl } from 'mirador-gateway-ingest/proto/gateway/ingest/v1/ingest_gateway';
 import { NodeGrpcRpc } from '../grpc';
-import { Trace } from './trace';
-import type { ClientOptions, TraceOptions } from './types';
+import { Trace, NoopTrace } from './trace';
+import type { ClientOptions, TraceOptions, Logger, TraceCallbacks } from './types';
 
 // Default configuration values
 const DEFAULT_API_URL = 'ingest.mirador.org:443';
 const DEFAULT_KEEP_ALIVE_INTERVAL_MS = 10000;
 const DEFAULT_CAPTURE_STACK_TRACE = true;
-const DEFAULT_MAX_RETRIES = 3;
-const DEFAULT_RETRY_BACKOFF = 1000;
+const DEFAULT_MAX_RETRIES = 2;
+const DEFAULT_RETRY_BACKOFF = 500;
+const DEFAULT_CALL_TIMEOUT_MS = 5000;
+const DEFAULT_MAX_TRACE_LIFETIME_MS = 0; // 0 = disabled
+
+/** Default no-op logger that silences all output */
+const NOOP_LOGGER: Logger = {
+  debug() {},
+  warn() {},
+  error() {},
+};
+
+/** Default console logger (uses dynamic lookup so test spies work) */
+const CONSOLE_LOGGER: Logger = {
+  debug(...args: unknown[]) { console.debug(...args); },
+  warn(...args: unknown[]) { console.warn(...args); },
+  error(...args: unknown[]) { console.error(...args); },
+};
 
 /**
  * Main client for interacting with the Mirador Ingest Gateway API
@@ -30,8 +46,16 @@ export class Client {
   public apiUrl: string;
   public apiKey?: string;
   public keepAliveIntervalMs: number;
+  private callTimeoutMs: number;
   private rpc: NodeGrpcRpc;
   private provider?: import('./types').EIP1193Provider;
+
+  /** @internal */ readonly logger: Logger;
+  /** @internal */ readonly callbacks?: TraceCallbacks;
+  /** @internal */ rateLimitedUntil: number = 0;
+
+  private sampleRate: number;
+  private sampler?: (options: TraceOptions) => boolean;
 
   /**
    * Create a new Client instance
@@ -42,8 +66,22 @@ export class Client {
     this.apiKey = apiKey;
     this.apiUrl = options?.apiUrl || DEFAULT_API_URL;
     this.keepAliveIntervalMs = options?.keepAliveIntervalMs || DEFAULT_KEEP_ALIVE_INTERVAL_MS;
+    this.callTimeoutMs = options?.callTimeoutMs ?? DEFAULT_CALL_TIMEOUT_MS;
     this.provider = options?.provider;
-    this.rpc = new NodeGrpcRpc(this.apiUrl, apiKey, options?.useSsl ?? true);
+    this.callbacks = options?.callbacks;
+    this.sampleRate = options?.sampleRate ?? 1;
+    this.sampler = options?.sampler;
+
+    // Configure logger: custom > debug console > noop
+    if (options?.logger) {
+      this.logger = options.logger;
+    } else if (options?.debug) {
+      this.logger = CONSOLE_LOGGER;
+    } else {
+      this.logger = NOOP_LOGGER;
+    }
+
+    this.rpc = new NodeGrpcRpc(this.apiUrl, apiKey, options?.useSsl ?? true, this.callTimeoutMs);
   }
 
   /**
@@ -102,15 +140,31 @@ export class Client {
    * @returns A Trace builder instance
    */
   trace(options?: TraceOptions): Trace {
+    // Sampling: check if this trace should be sampled out
+    const traceOptions = options ?? {};
+    if (this.sampler) {
+      if (!this.sampler(traceOptions)) {
+        return new NoopTrace();
+      }
+    } else if (this.sampleRate < 1) {
+      if (Math.random() >= this.sampleRate) {
+        return new NoopTrace();
+      }
+    }
+
     return new Trace(this, {
-      name: options?.name,
-      traceId: options?.traceId,
-      captureStackTrace: options?.captureStackTrace ?? DEFAULT_CAPTURE_STACK_TRACE,
-      maxRetries: options?.maxRetries ?? DEFAULT_MAX_RETRIES,
-      retryBackoff: options?.retryBackoff ?? DEFAULT_RETRY_BACKOFF,
+      name: traceOptions.name,
+      traceId: traceOptions.traceId,
+      captureStackTrace: traceOptions.captureStackTrace ?? DEFAULT_CAPTURE_STACK_TRACE,
+      maxRetries: traceOptions.maxRetries ?? DEFAULT_MAX_RETRIES,
+      retryBackoff: traceOptions.retryBackoff ?? DEFAULT_RETRY_BACKOFF,
       keepAliveIntervalMs: this.keepAliveIntervalMs,
-      provider: options?.provider ?? this.provider,
-      autoKeepAlive: options?.autoKeepAlive ?? !options?.traceId,
+      provider: traceOptions.provider ?? this.provider,
+      autoKeepAlive: traceOptions.autoKeepAlive ?? !traceOptions.traceId,
+      callTimeoutMs: this.callTimeoutMs,
+      maxTraceLifetimeMs: traceOptions.maxTraceLifetimeMs ?? DEFAULT_MAX_TRACE_LIFETIME_MS,
+      maxQueueSize: traceOptions.maxQueueSize,
+      callbacks: traceOptions.callbacks ?? this.callbacks,
     });
   }
 }
