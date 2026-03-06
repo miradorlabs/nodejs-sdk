@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.6.0](https://github.com/miradorlabs/nodejs-sdk/compare/v1.5.0...v1.6.0) (2026-03-06)
+
+
+### Features
+
+* add autoKeepAlive option to prevent zombie timers on resumed traces ([11045c2](https://github.com/miradorlabs/nodejs-sdk/commit/11045c2a2dad9d8c98941160cb5c0634b3dec770))
+* add keepAlive option to prevent zombie timers on resumed traces ([8cdd7af](https://github.com/miradorlabs/nodejs-sdk/commit/8cdd7afbd9748ed0d860190aae329bb70164c6da))
+
+
+### Bug Fixes
+
+* remove unused variable to pass lint ([95a64a3](https://github.com/miradorlabs/nodejs-sdk/commit/95a64a361a16a12358ae986a01c2e14e785591e2))
+
 ## [1.5.0](https://github.com/miradorlabs/nodejs-sdk/compare/v1.4.0...v1.5.0) (2026-03-05)
 
 
