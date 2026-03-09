@@ -94,6 +94,16 @@ export interface SafeMsgHintData {
 }
 
 /**
+ * Safe transaction hint for Safe multisig transaction tracking
+ */
+export interface SafeTxHintData {
+  safeTxHash: string;
+  chain: ChainName;
+  details?: string;
+  timestamp: Date;
+}
+
+/**
  * A single frame in a stack trace
  */
 export interface StackFrame {

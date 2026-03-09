@@ -2,19 +2,25 @@
  * Client - Main client for interacting with the Mirador Ingest Gateway
  */
 import type {
-  CreateTraceRequest,
-  CreateTraceResponse,
-  UpdateTraceRequest,
-  UpdateTraceResponse,
+  FlushTraceRequest,
+  FlushTraceResponse,
   KeepAliveRequest,
   KeepAliveResponse,
   CloseTraceRequest,
   CloseTraceResponse,
 } from 'mirador-gateway-ingest/proto/gateway/ingest/v1/ingest_gateway';
 import { IngestGatewayServiceClientImpl } from 'mirador-gateway-ingest/proto/gateway/ingest/v1/ingest_gateway';
+import { randomBytes } from 'crypto';
 import { NodeGrpcRpc } from '../grpc';
 import { Trace } from './trace';
 import type { ClientOptions, TraceOptions } from './types';
+
+/**
+ * Generate a W3C-compatible trace ID (32 lowercase hex chars / 128 bits)
+ */
+function generateTraceId(): string {
+  return randomBytes(16).toString('hex');
+}
 
 // Default configuration values
 const DEFAULT_API_URL = 'ingest.mirador.org:443';
@@ -47,21 +53,12 @@ export class Client {
   }
 
   /**
-   * Internal method to send trace to gateway
+   * Internal method to flush trace to gateway (idempotent create-or-update)
    * @internal
    */
-  async _sendTrace(request: CreateTraceRequest): Promise<CreateTraceResponse> {
+  async _flushTrace(request: FlushTraceRequest): Promise<FlushTraceResponse> {
     const client = new IngestGatewayServiceClientImpl(this.rpc);
-    return await client.CreateTrace(request);
-  }
-
-  /**
-   * Internal method to update an existing trace
-   * @internal
-   */
-  async _updateTrace(request: UpdateTraceRequest): Promise<UpdateTraceResponse> {
-    const client = new IngestGatewayServiceClientImpl(this.rpc);
-    return await client.UpdateTrace(request);
+    return await client.FlushTrace(request);
   }
 
   /**
@@ -102,9 +99,11 @@ export class Client {
    * @returns A Trace builder instance
    */
   trace(options?: TraceOptions): Trace {
+    const traceId = options?.traceId ?? generateTraceId();
+
     return new Trace(this, {
       name: options?.name,
-      traceId: options?.traceId,
+      traceId,
       captureStackTrace: options?.captureStackTrace ?? DEFAULT_CAPTURE_STACK_TRACE,
       maxRetries: options?.maxRetries ?? DEFAULT_MAX_RETRIES,
       retryBackoff: options?.retryBackoff ?? DEFAULT_RETRY_BACKOFF,
