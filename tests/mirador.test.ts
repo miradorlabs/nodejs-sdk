@@ -1548,7 +1548,7 @@ describe('Client', () => {
 
       // With auto-flush, events may be split across multiple FlushTrace calls
       const allEvents = [
-        ...(mockApiGatewayClient.FlushTrace.mock.calls.flatMap((call: any) => call[0].data?.events ?? [])),
+        ...(mockApiGatewayClient.FlushTrace.mock.calls.flatMap((call) => call[0].data?.events ?? [])),
       ];
       const sentEvent = allEvents.find((e) => e.name === 'tx:sent');
       expect(sentEvent).toBeDefined();
@@ -1580,7 +1580,7 @@ describe('Client', () => {
 
       // With auto-flush, events may be split across multiple FlushTrace calls
       const allEvents = [
-        ...(mockApiGatewayClient.FlushTrace.mock.calls.flatMap((call: any) => call[0].data?.events ?? [])),
+        ...(mockApiGatewayClient.FlushTrace.mock.calls.flatMap((call) => call[0].data?.events ?? [])),
       ];
       const errorEvent = allEvents.find((e) => e.name === 'tx:error');
       expect(errorEvent).toBeDefined();
@@ -1624,7 +1624,7 @@ describe('Client', () => {
 
       // With auto-flush, events may be split across multiple FlushTrace calls
       const allEvents = [
-        ...(mockApiGatewayClient.FlushTrace.mock.calls.flatMap((call: any) => call[0].data?.events ?? [])),
+        ...(mockApiGatewayClient.FlushTrace.mock.calls.flatMap((call) => call[0].data?.events ?? [])),
       ];
       const sendEvents = allEvents.filter((e) => e.name === 'tx:send');
       const sentEvents = allEvents.filter((e) => e.name === 'tx:sent');
@@ -1748,7 +1748,7 @@ describe('Client', () => {
       expect(flushCall.data?.events?.[0]?.name).toBe('backend:received');
       expect(flushCall.data?.events?.[0]?.details).toBe('request received');
       expect(flushCall.data?.events?.[1]?.name).toBe('backend:processed');
-      expect(JSON.parse(flushCall.data?.events?.[1]?.details!)).toEqual({ duration: 150 });
+      expect(JSON.parse(flushCall.data?.events?.[1]?.details ?? '{}')).toEqual({ duration: 150 });
     });
 
     it('should include txHashHints in the FlushTrace request', async () => {
