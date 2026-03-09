@@ -19,7 +19,7 @@ npm install @miradorlabs/nodejs-sdk
 - **Stack Trace Capture** - Automatic or manual capture of call stack for debugging
 - **TypeScript Support** - Full type definitions included
 - **Multiple Transaction Hints** - Support for multiple blockchain transaction correlations
-- **Safe Multisig Tracking** - Track Safe message confirmations with `addSafeMsgHint()`
+- **Safe Multisig Tracking** - Track Safe message and transaction confirmations with `addSafeMsgHint()` and `addSafeTxHint()`
 
 ## Quick Start
 
@@ -96,11 +96,15 @@ const trace = client.trace({
 ```typescript
 interface TraceOptions {
   name?: string;             // Trace name
+  traceId?: string;          // Resume an existing trace by ID (e.g., passed from frontend SDK)
   captureStackTrace?: boolean; // Capture stack trace at creation (default: true)
   maxRetries?: number;       // Max retry attempts on failure (default: 3)
   retryBackoff?: number;     // Base backoff delay in ms (default: 1000)
+  autoKeepAlive?: boolean;   // Auto keep-alive (default: true for new, false when resuming)
 }
 ```
+
+> **Note:** A W3C-compatible trace ID (32 hex chars) is automatically generated when you call `client.trace()`. If you pass `traceId`, the trace resumes an existing trace instead.
 
 Returns: `Trace` builder instance
 
@@ -226,6 +230,21 @@ trace.addSafeMsgHint('0xmsgHash...', 'ethereum')
 | `chain` | `ChainName` | Chain name: `'ethereum'` \| `'polygon'` \| `'arbitrum'` \| `'base'` \| `'optimism'` \| `'bsc'` |
 | `details` | `string` | Optional details about the message |
 
+#### `addSafeTxHint(safeTxHash, chain, details?)`
+
+Add a Safe transaction hint for tracking Safe multisig transaction confirmations. Mirador will monitor the Safe contract for confirmation events related to the given Safe transaction hash.
+
+```typescript
+trace.addSafeTxHint('0xsafeTxHash...', 'ethereum')
+     .addSafeTxHint('0xotherHash...', 'base', 'Token transfer')
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `safeTxHash` | `string` | The Safe transaction hash to track |
+| `chain` | `ChainName` | Chain name: `'ethereum'` \| `'polygon'` \| `'arbitrum'` \| `'base'` \| `'optimism'` \| `'bsc'` |
+| `details` | `string` | Optional details about the transaction |
+
 #### `addTxInputData(inputData)`
 
 Add transaction input data (calldata) as a trace event. This is the hex-encoded data field from a transaction, useful for debugging failed transactions where the calldata is still available even though the transaction reverted.
@@ -244,7 +263,7 @@ Returns: `this` for chaining
 
 Send pending data to the gateway. Fire-and-forget — returns immediately but maintains strict ordering internally.
 
-The first flush sends `CreateTrace`, subsequent flushes send `UpdateTrace`.
+Each flush sends `FlushTrace` (an idempotent create-or-update RPC).
 
 ```typescript
 trace.addEvent('important_milestone');
@@ -259,7 +278,7 @@ Returns: `void`
 
 > **Deprecated:** Use `flush()` or rely on auto-flush instead. Kept for backward compatibility.
 
-Submit the trace to the gateway synchronously and return the trace ID. Keep-alive timer starts automatically after successful creation.
+Submit the trace to the gateway synchronously and return the trace ID.
 
 ```typescript
 const traceId = await trace.create();
@@ -269,13 +288,13 @@ Returns: `Promise<string | undefined>` - The trace ID if successful, undefined i
 
 #### `getTraceId()`
 
-Get the trace ID (available after first flush completes successfully, or immediately if using `traceId` option / `setTraceId()`).
+Get the trace ID. Always available immediately since trace IDs are generated at `client.trace()` time.
 
 ```typescript
-const traceId = trace.getTraceId();  // string | null
+const traceId = trace.getTraceId();  // string
 ```
 
-Returns: `string | null`
+Returns: `string`
 
 #### `close(reason?)`
 
@@ -293,7 +312,7 @@ await trace.close('User completed workflow');
 Returns: `Promise<void>`
 
 **Important:** Once a trace is closed:
-- All method calls (`addAttribute`, `addEvent`, `addTag`, `addTxHint`, `addSafeMsgHint`) will be ignored with a warning
+- All method calls (`addAttribute`, `addEvent`, `addTag`, `addTxHint`, `addSafeMsgHint`, `addSafeTxHint`) will be ignored with a warning
 - The keep-alive timer will be stopped
 - Any pending data will be flushed, then a close request will be sent to the server
 
@@ -328,12 +347,12 @@ async function trackSwapExecution(userAddress: string, txHash: string) {
     .addTags(['swap', 'dex', 'ethereum'])
     .addEvent('quote_requested')
     .addEvent('quote_received', { price: 2500.50, provider: 'Uniswap' });
-  // → CreateTrace auto-flushed at end of current JS tick
+  // → FlushTrace auto-sent at end of current JS tick
 
   try {
     await processTransaction();
 
-    // Add more data — auto-flushed as UpdateTrace
+    // Add more data — auto-flushed via FlushTrace
     trace.addEvent('transaction_signed')
          .addEvent('transaction_confirmed', { blockNumber: 12345678 })
          .addTxHint(txHash, 'ethereum', 'Swap transaction');
@@ -483,11 +502,13 @@ import {
   Client,
   Trace,
   ClientOptions,
-  TraceOptions,      // { name?, captureStackTrace?, maxRetries?, retryBackoff? }
+  TraceOptions,      // { name?, traceId?, captureStackTrace?, maxRetries?, retryBackoff?, autoKeepAlive? }
   AddEventOptions,   // { captureStackTrace?: boolean }
   StackFrame,        // { functionName, fileName, lineNumber, columnNumber }
   StackTrace,        // { frames: StackFrame[], raw: string }
   ChainName,         // 'ethereum' | 'polygon' | 'arbitrum' | 'base' | 'optimism' | 'bsc'
+  SafeTxHintData,    // { safeTxHash, chain, details?, timestamp }
+  SafeMsgHintData,   // { messageHash, chain, details?, timestamp }
 } from '@miradorlabs/nodejs-sdk';
 ```
 
@@ -525,6 +546,7 @@ mirador> tag swap
 mirador> event wallet_connected '{"wallet":"MetaMask"}'
 mirador> tx 0x123... ethereum
 mirador> safemsg 0xabc... ethereum "Multisig approval"
+mirador> safetx 0xdef... ethereum "Safe transaction"
 mirador> flush
 mirador> close "Completed"
 ```
