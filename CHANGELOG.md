@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.7.0](https://github.com/miradorlabs/nodejs-sdk/compare/v1.6.0...v1.7.0) (2026-03-10)
+
+
+### Features
+
+* add addSafeTxHint for Safe multisig transaction tracking ([9e3ead9](https://github.com/miradorlabs/nodejs-sdk/commit/9e3ead924af51da600599c71e41c15ab231f97c7))
+* add addSafeTxHint for Safe multisig tx tracking ([bfe3157](https://github.com/miradorlabs/nodejs-sdk/commit/bfe3157d53bd2e388bf16cede7bd73813bc2b4ec))
+
 ## [1.6.0](https://github.com/miradorlabs/nodejs-sdk/compare/v1.5.0...v1.6.0) (2026-03-06)
 
 
