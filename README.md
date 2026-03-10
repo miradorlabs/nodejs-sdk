@@ -19,7 +19,8 @@ npm install @miradorlabs/nodejs-sdk
 - **Stack Trace Capture** - Automatic or manual capture of call stack for debugging
 - **TypeScript Support** - Full type definitions included
 - **Multiple Transaction Hints** - Support for multiple blockchain transaction correlations
-- **Safe Multisig Tracking** - Track Safe message confirmations with `addSafeMsgHint()`
+- **Safe Multisig Tracking** - Track Safe message and transaction confirmations with `addSafeMsgHint()` and `addSafeTxHint()`
+- **EIP-1193 Provider Integration** - Send transactions directly through traces with `sendTransaction()`
 
 ## Quick Start
 
@@ -65,6 +66,8 @@ new Client(apiKey?: string, options?: ClientOptions)
 interface ClientOptions {
   apiUrl?: string;              // Gateway URL (defaults to ingest.mirador.org:443)
   keepAliveIntervalMs?: number; // Keep-alive ping interval in milliseconds (default: 10000)
+  provider?: EIP1193Provider;   // EIP-1193 provider for transaction operations
+  useSsl?: boolean;             // Use SSL for gRPC connection (default: true)
 }
 ```
 
@@ -96,9 +99,12 @@ const trace = client.trace({
 ```typescript
 interface TraceOptions {
   name?: string;             // Trace name
+  traceId?: string;          // Resume an existing trace by ID
   captureStackTrace?: boolean; // Capture stack trace at creation (default: true)
   maxRetries?: number;       // Max retry attempts on failure (default: 3)
   retryBackoff?: number;     // Base backoff delay in ms (default: 1000)
+  provider?: EIP1193Provider;  // EIP-1193 provider for transaction operations
+  autoKeepAlive?: boolean;   // Auto keep-alive (default: true for new, false when resuming)
 }
 ```
 
@@ -226,6 +232,70 @@ trace.addSafeMsgHint('0xmsgHash...', 'ethereum')
 | `chain` | `ChainName` | Chain name: `'ethereum'` \| `'polygon'` \| `'arbitrum'` \| `'base'` \| `'optimism'` \| `'bsc'` |
 | `details` | `string` | Optional details about the message |
 
+#### `addSafeTxHint(safeTxHash, chain, details?)`
+
+Add a Safe transaction hint for tracking Safe multisig transaction executions.
+
+```typescript
+trace.addSafeTxHint('0xsafeTxHash...', 'ethereum')
+     .addSafeTxHint('0xotherHash...', 'base', 'Token transfer')
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `safeTxHash` | `string` | The Safe transaction hash to track |
+| `chain` | `ChainName` | Chain name: `'ethereum'` \| `'polygon'` \| `'arbitrum'` \| `'base'` \| `'optimism'` \| `'bsc'` |
+| `details` | `string` | Optional details about the transaction |
+
+#### `addTx(tx, chain?)`
+
+Add a transaction object, automatically extracting hash, chain, and input data.
+
+```typescript
+// Works with ethers.js transaction responses
+const tx = await wallet.sendTransaction({ to, data });
+trace.addTx(tx, 'ethereum');
+
+// Or with viem — chain inferred from tx.chainId if not provided
+trace.addTx({ hash: txHash, data: calldata, chainId: 1 });
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `tx` | `TransactionLike` | Transaction object with `hash`, optional `data`/`input`/`chainId` |
+| `chain` | `ChainName` | Optional chain override (inferred from `tx.chainId` or provider if omitted) |
+
+#### `sendTransaction(tx, provider?)`
+
+Send a transaction through the trace's EIP-1193 provider, automatically capturing events (`tx:send`, `tx:sent`, `tx:error`), input data, and tx hint.
+
+```typescript
+// Set provider on client or trace
+const client = new Client('key', { provider: myProvider });
+const trace = client.trace({ name: 'Swap' });
+
+const txHash = await trace.sendTransaction({
+  from: '0xabc...',
+  to: '0xRouterAddress...',
+  data: '0x38ed1739...',
+});
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `tx` | `TransactionRequest` | EIP-1193 style transaction parameters |
+| `provider` | `EIP1193Provider` | Optional provider override |
+
+Returns: `Promise<string>` - The transaction hash
+
+#### `setProvider(provider)`
+
+Set an EIP-1193 provider for transaction operations. Automatically detects chain ID.
+
+```typescript
+trace.setProvider(myProvider);
+```
+
 #### `addTxInputData(inputData)`
 
 Add transaction input data (calldata) as a trace event. This is the hex-encoded data field from a transaction, useful for debugging failed transactions where the calldata is still available even though the transaction reverted.
@@ -277,6 +347,25 @@ const traceId = trace.getTraceId();  // string | null
 
 Returns: `string | null`
 
+#### `setTraceId(traceId)`
+
+Set the trace ID on an existing trace instance, allowing it to resume a trace created elsewhere (e.g., passed from a frontend SDK via HTTP header). Subsequent flushes will send `UpdateTrace` instead of `CreateTrace`.
+
+```typescript
+trace.setTraceId('abc-123-def');
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `traceId` | `string` | The trace ID to resume |
+
+Returns: `this` for chaining
+
+**Notes:**
+- Ignored if the trace is already closed (logs a warning)
+- Ignored if a trace ID is already set (logs a warning)
+- Can also be set at creation time via `client.trace({ traceId: '...' })`
+
 #### `close(reason?)`
 
 Close the trace and stop all timers. Flushes any pending data before sending the close request. After calling this method, all subsequent operations will be ignored.
@@ -293,7 +382,7 @@ await trace.close('User completed workflow');
 Returns: `Promise<void>`
 
 **Important:** Once a trace is closed:
-- All method calls (`addAttribute`, `addEvent`, `addTag`, `addTxHint`, `addSafeMsgHint`) will be ignored with a warning
+- All method calls (`addAttribute`, `addEvent`, `addTag`, `addTxHint`, `addSafeMsgHint`, `addSafeTxHint`) will be ignored with a warning
 - The keep-alive timer will be stopped
 - Any pending data will be flushed, then a close request will be sent to the server
 
@@ -439,6 +528,58 @@ async function sendTracedTransaction() {
 }
 ```
 
+## MiradorProvider
+
+`MiradorProvider` is an EIP-1193 provider wrapper that automatically captures transaction data for Mirador traces. Wrap any existing provider to get automatic tracing for `eth_sendTransaction` and `eth_sendRawTransaction` calls.
+
+```typescript
+import { Client, MiradorProvider } from '@miradorlabs/nodejs-sdk';
+
+const client = new Client('your-api-key');
+
+// Option 1: Auto-create a new trace per transaction
+const provider = new MiradorProvider(myProvider, client);
+
+// Option 2: Bind to an existing trace
+const trace = client.trace({ name: 'ServerSwap' });
+const provider = new MiradorProvider(myProvider, client, { trace });
+
+// Option 3: Configure trace options for auto-created traces
+const provider = new MiradorProvider(myProvider, client, {
+  traceOptions: { name: 'BackendTx' }
+});
+
+// Use like any EIP-1193 provider — transactions are automatically traced
+const txHash = await provider.request({
+  method: 'eth_sendTransaction',
+  params: [{ from: '0xabc...', to: '0xdef...', value: '0x0' }],
+});
+```
+
+For each intercepted transaction, `MiradorProvider`:
+- Sets the underlying provider on the trace for chain detection
+- Captures `tx:sent` event with transaction hash on success
+- Captures `tx:error` event with error details on failure
+- Adds transaction hash hint and input data automatically
+
+## Chain Utilities
+
+### `chainIdToName(chainId)`
+
+Convert a numeric chain ID to a Mirador `ChainName`.
+
+```typescript
+import { chainIdToName } from '@miradorlabs/nodejs-sdk';
+
+chainIdToName(1);     // 'ethereum'
+chainIdToName(137);   // 'polygon'
+chainIdToName(42161); // 'arbitrum'
+chainIdToName(8453);  // 'base'
+chainIdToName(10);    // 'optimism'
+chainIdToName(56);    // 'bsc'
+chainIdToName(999);   // undefined
+```
+
 ## Configuration
 
 ### Environment Variables
@@ -480,14 +621,33 @@ Full TypeScript support with exported types:
 
 ```typescript
 import {
+  // Classes
   Client,
   Trace,
+  MiradorProvider,
+
+  // Utilities
+  captureStackTrace,
+  formatStackTrace,
+  formatStackTraceReadable,
+  chainIdToName,
+
+  // Types
   ClientOptions,
-  TraceOptions,      // { name?, captureStackTrace?, maxRetries?, retryBackoff? }
-  AddEventOptions,   // { captureStackTrace?: boolean }
-  StackFrame,        // { functionName, fileName, lineNumber, columnNumber }
-  StackTrace,        // { frames: StackFrame[], raw: string }
-  ChainName,         // 'ethereum' | 'polygon' | 'arbitrum' | 'base' | 'optimism' | 'bsc'
+  TraceOptions,             // { name?, traceId?, captureStackTrace?, maxRetries?, retryBackoff?, provider?, autoKeepAlive? }
+  AddEventOptions,          // { captureStackTrace?: boolean }
+  StackFrame,               // { functionName, fileName, lineNumber, columnNumber }
+  StackTrace,               // { frames: StackFrame[], raw: string }
+  ChainName,                // 'ethereum' | 'polygon' | 'arbitrum' | 'base' | 'optimism' | 'bsc'
+  TraceEvent,               // { eventName, details?, timestamp }
+  TxHashHint,               // { txHash, chain, details?, timestamp }
+  SafeTxHintData,           // { safeTxHash, chain, details?, timestamp }
+  SafeMsgHintData,          // { messageHash, chain, details?, timestamp }
+  EIP1193Provider,          // { request(args): Promise<unknown> }
+  TxHintOptions,            // { input?, details? }
+  TransactionLike,          // { hash, data?, input?, chainId? }
+  TransactionRequest,       // { from, to?, data?, value?, ... }
+  MiradorProviderOptions,   // { trace?, traceOptions? }
 } from '@miradorlabs/nodejs-sdk';
 ```
 
