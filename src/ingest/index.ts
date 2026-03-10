@@ -20,6 +20,7 @@ export type {
   TraceEvent,
   TxHashHint,
   SafeMsgHintData,
+  SafeTxHintData,
   TraceOptions,
   AddEventOptions,
   StackFrame,
