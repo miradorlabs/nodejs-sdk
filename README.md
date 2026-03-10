@@ -314,7 +314,7 @@ Returns: `this` for chaining
 
 Send pending data to the gateway. Fire-and-forget — returns immediately but maintains strict ordering internally.
 
-The first flush sends `CreateTrace`, subsequent flushes send `UpdateTrace`.
+Each flush sends `FlushTrace` (an idempotent create-or-update RPC).
 
 ```typescript
 trace.addEvent('important_milestone');
@@ -339,17 +339,19 @@ Returns: `Promise<string | undefined>` - The trace ID if successful, undefined i
 
 #### `getTraceId()`
 
-Get the trace ID (available after first flush completes successfully, or immediately if using `traceId` option / `setTraceId()`).
+Get the trace ID. Available immediately — trace IDs are generated client-side (W3C-compatible, 32 hex chars).
 
 ```typescript
-const traceId = trace.getTraceId();  // string | null
+const traceId = trace.getTraceId();  // string (always available)
 ```
 
-Returns: `string | null`
+Returns: `string`
 
-#### `setTraceId(traceId)`
+#### `setTraceId(traceId)` *(deprecated)*
 
-Set the trace ID on an existing trace instance, allowing it to resume a trace created elsewhere (e.g., passed from a frontend SDK via HTTP header). Subsequent flushes will send `UpdateTrace` instead of `CreateTrace`.
+> **Deprecated:** Pass `traceId` to `client.trace({ traceId })` instead.
+
+Override the trace ID on an existing trace instance.
 
 ```typescript
 trace.setTraceId('abc-123-def');
@@ -357,14 +359,13 @@ trace.setTraceId('abc-123-def');
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `traceId` | `string` | The trace ID to resume |
+| `traceId` | `string` | The trace ID to use |
 
 Returns: `this` for chaining
 
 **Notes:**
 - Ignored if the trace is already closed (logs a warning)
-- Ignored if a trace ID is already set (logs a warning)
-- Can also be set at creation time via `client.trace({ traceId: '...' })`
+- Prefer passing `traceId` at creation time via `client.trace({ traceId: '...' })`
 
 #### `close(reason?)`
 
@@ -417,12 +418,12 @@ async function trackSwapExecution(userAddress: string, txHash: string) {
     .addTags(['swap', 'dex', 'ethereum'])
     .addEvent('quote_requested')
     .addEvent('quote_received', { price: 2500.50, provider: 'Uniswap' });
-  // → CreateTrace auto-flushed at end of current JS tick
+  // → FlushTrace auto-sent at end of current JS tick
 
   try {
     await processTransaction();
 
-    // Add more data — auto-flushed as UpdateTrace
+    // Add more data — auto-flushed via FlushTrace
     trace.addEvent('transaction_signed')
          .addEvent('transaction_confirmed', { blockNumber: 12345678 })
          .addTxHint(txHash, 'ethereum', 'Swap transaction');
