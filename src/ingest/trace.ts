@@ -16,7 +16,7 @@ import type {
 } from 'mirador-gateway-ingest/proto/gateway/ingest/v1/ingest_gateway';
 import { Chain } from 'mirador-gateway-ingest/proto/gateway/ingest/v1/ingest_gateway';
 import { ResponseStatus_StatusCode } from 'mirador-gateway-ingest/proto/gateway/common/v1/status';
-import type { ChainName, TraceEvent, TxHashHint, SafeMsgHintData, AddEventOptions, StackTrace, EIP1193Provider, TxHintOptions, TransactionLike, TransactionRequest } from './types';
+import type { ChainName, TraceEvent, TxHashHint, SafeMsgHintData, SafeTxHintData, AddEventOptions, StackTrace, EIP1193Provider, TxHintOptions, TransactionLike, TransactionRequest } from './types';
 import { captureStackTrace, formatStackTrace } from './stacktrace';
 import { chainIdToName } from './chains';
 
@@ -106,6 +106,7 @@ export class Trace {
   private pendingEvents: TraceEvent[] = [];
   private pendingTxHashHints: TxHashHint[] = [];
   private pendingSafeMsgHints: SafeMsgHintData[] = [];
+  private pendingSafeTxHints: SafeTxHintData[] = [];
 
   // Flush infrastructure
   private microtaskScheduled: boolean = false;
@@ -399,6 +400,29 @@ export class Trace {
   }
 
   /**
+   * Add a Safe transaction hint for tracking Safe multisig transaction executions.
+   * @param safeTxHash The Safe transaction hash to track
+   * @param chain Chain name (e.g., "ethereum", "polygon", "base")
+   * @param details Optional details string
+   * @returns This trace builder for chaining
+   */
+  addSafeTxHint(safeTxHash: string, chain: ChainName, details?: string): this {
+    if (this.closed) {
+      console.warn('[MiradorTrace] Trace is closed, ignoring addSafeTxHint');
+      return this;
+    }
+
+    this.pendingSafeTxHints.push({
+      safeTxHash,
+      chain,
+      details,
+      timestamp: new Date(),
+    });
+    this.scheduleFlush();
+    return this;
+  }
+
+  /**
    * Add transaction input data (calldata) as a trace event.
    * Useful for debugging failed transactions where input data is still available.
    * @param inputData The hex-encoded transaction input data (e.g., "0xa9059cbb...")
@@ -531,7 +555,8 @@ export class Trace {
       this.pendingTags.length > 0 ||
       this.pendingEvents.length > 0 ||
       this.pendingTxHashHints.length > 0 ||
-      this.pendingSafeMsgHints.length > 0;
+      this.pendingSafeMsgHints.length > 0 ||
+      this.pendingSafeTxHints.length > 0;
 
     if (!hasPendingData && this.traceId !== null) {
       return; // Nothing to flush and trace already created
@@ -798,6 +823,12 @@ export class Trace {
         details: hint.details,
         timestamp: hint.timestamp,
       })),
+      safeTxHints: this.pendingSafeTxHints.map((hint) => ({
+        chain: CHAIN_MAP[hint.chain],
+        safeTxHash: hint.safeTxHash,
+        details: hint.details,
+        timestamp: hint.timestamp,
+      })),
     };
   }
 
@@ -810,6 +841,7 @@ export class Trace {
     this.pendingEvents = [];
     this.pendingTxHashHints = [];
     this.pendingSafeMsgHints = [];
+    this.pendingSafeTxHints = [];
   }
 
   /**

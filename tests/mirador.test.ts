@@ -1009,6 +1009,141 @@ describe('Client', () => {
     });
   });
 
+  describe('addSafeTxHint', () => {
+    it('should add a safe transaction hint with chain and safeTxHash', async () => {
+      const mockResponse: apiGateway.CreateTraceResponse = {
+        status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
+        traceId: 'trace-safetx',
+      };
+      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+
+      await client.trace({ name: 'test', captureStackTrace: false })
+        .addSafeTxHint('0xsafeTxHash123', 'ethereum')
+        .create();
+
+      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      const safeTxHints = calls.data?.safeTxHints;
+      expect(safeTxHints).toHaveLength(1);
+      expect(safeTxHints?.[0]?.safeTxHash).toBe('0xsafeTxHash123');
+      expect(safeTxHints?.[0]?.chain).toBe(Chain.CHAIN_ETHEREUM);
+      expect(safeTxHints?.[0]?.timestamp).toBeInstanceOf(Date);
+    });
+
+    it('should add a safe transaction hint with details', async () => {
+      const mockResponse: apiGateway.CreateTraceResponse = {
+        status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
+        traceId: 'trace-safetx-details',
+      };
+      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+
+      await client.trace({ name: 'test', captureStackTrace: false })
+        .addSafeTxHint('0xsafeTxHash456', 'polygon', 'multisig execution')
+        .create();
+
+      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      const safeTxHints = calls.data?.safeTxHints;
+      expect(safeTxHints?.[0]?.safeTxHash).toBe('0xsafeTxHash456');
+      expect(safeTxHints?.[0]?.chain).toBe(Chain.CHAIN_POLYGON);
+      expect(safeTxHints?.[0]?.details).toBe('multisig execution');
+    });
+
+    it('should support multiple safe transaction hints', async () => {
+      const mockResponse: apiGateway.CreateTraceResponse = {
+        status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
+        traceId: 'trace-safetx-multi',
+      };
+      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+
+      await client.trace({ name: 'test', captureStackTrace: false })
+        .addSafeTxHint('0xsafetx1', 'ethereum')
+        .addSafeTxHint('0xsafetx2', 'base', 'second hint')
+        .create();
+
+      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      const safeTxHints = calls.data?.safeTxHints;
+      expect(safeTxHints).toHaveLength(2);
+      expect(safeTxHints?.[0]?.safeTxHash).toBe('0xsafetx1');
+      expect(safeTxHints?.[0]?.chain).toBe(Chain.CHAIN_ETHEREUM);
+      expect(safeTxHints?.[1]?.safeTxHash).toBe('0xsafetx2');
+      expect(safeTxHints?.[1]?.chain).toBe(Chain.CHAIN_BASE);
+      expect(safeTxHints?.[1]?.details).toBe('second hint');
+    });
+
+    it('should handle different chain names', async () => {
+      const mockResponse: apiGateway.CreateTraceResponse = {
+        status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
+        traceId: 'trace-safetx-chains',
+      };
+      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+
+      const chainTests: Array<{ chain: ChainName; expected: Chain }> = [
+        { chain: 'ethereum', expected: Chain.CHAIN_ETHEREUM },
+        { chain: 'polygon', expected: Chain.CHAIN_POLYGON },
+        { chain: 'arbitrum', expected: Chain.CHAIN_ARBITRUM },
+        { chain: 'base', expected: Chain.CHAIN_BASE },
+        { chain: 'optimism', expected: Chain.CHAIN_OPTIMISM },
+        { chain: 'bsc', expected: Chain.CHAIN_BSC },
+      ];
+
+      for (const { chain, expected } of chainTests) {
+        mockApiGatewayClient.CreateTrace.mockClear();
+        mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+
+        await client.trace({ name: 'test', captureStackTrace: false })
+          .addSafeTxHint('0xsafetx', chain)
+          .create();
+
+        const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+        expect(calls.data?.safeTxHints?.[0]?.chain).toBe(expected);
+      }
+    });
+
+    it('should be ignored when trace is closed', async () => {
+      const mockResponse: apiGateway.CreateTraceResponse = {
+        status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
+        traceId: 'trace-safetx-closed',
+      };
+      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+
+      const trace = client.trace({ name: 'test', captureStackTrace: false });
+      await trace.create();
+      await trace.close();
+
+      trace.addSafeTxHint('0xsafetx', 'ethereum');
+      expect(console.warn).toHaveBeenCalledWith('[MiradorTrace] Trace is closed, ignoring addSafeTxHint');
+    });
+
+    it('should return this for chaining', () => {
+      const trace = client.trace({ name: 'test', captureStackTrace: false });
+      const result = trace.addSafeTxHint('0xsafetx', 'ethereum');
+      expect(result).toBe(trace);
+    });
+
+    it('should work alongside txHashHints, safeMsgHints, and other builder methods', async () => {
+      const mockResponse: apiGateway.CreateTraceResponse = {
+        status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
+        traceId: 'trace-safetx-combined',
+      };
+      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+
+      await client.trace({ name: 'multisig-exec', captureStackTrace: false })
+        .addAttribute('safe_address', '0x1234')
+        .addTag('multisig')
+        .addEvent('executing', 'token transfer')
+        .addTxHint('0xtx123', 'ethereum')
+        .addSafeMsgHint('0xmsg123', 'ethereum', 'approval')
+        .addSafeTxHint('0xsafetx123', 'ethereum', 'execution')
+        .create();
+
+      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      expect(calls.data?.txHashHints).toHaveLength(1);
+      expect(calls.data?.safeMsgHints).toHaveLength(1);
+      expect(calls.data?.safeTxHints).toHaveLength(1);
+      expect(calls.data?.safeTxHints?.[0]?.safeTxHash).toBe('0xsafetx123');
+      expect(calls.data?.safeTxHints?.[0]?.details).toBe('execution');
+    });
+  });
+
   describe('addTx', () => {
     it('should extract hash and chain from TransactionLike', async () => {
       const mockResponse: apiGateway.CreateTraceResponse = {
