@@ -325,18 +325,6 @@ Returns: `void`
 
 > **Note:** Builder methods automatically call `flush()` via microtask scheduling, so you rarely need to call it manually. All synchronous builder calls within the same JS tick are batched into a single flush.
 
-#### `create()` *(deprecated)*
-
-> **Deprecated:** Use `flush()` or rely on auto-flush instead. Kept for backward compatibility.
-
-Submit the trace to the gateway synchronously and return the trace ID. Keep-alive timer starts automatically after successful creation.
-
-```typescript
-const traceId = await trace.create();
-```
-
-Returns: `Promise<string | undefined>` - The trace ID if successful, undefined if failed
-
 #### `getTraceId()`
 
 Get the trace ID. Available immediately — trace IDs are generated client-side (W3C-compatible, 32 hex chars).
@@ -346,26 +334,6 @@ const traceId = trace.getTraceId();  // string (always available)
 ```
 
 Returns: `string`
-
-#### `setTraceId(traceId)` *(deprecated)*
-
-> **Deprecated:** Pass `traceId` to `client.trace({ traceId })` instead.
-
-Override the trace ID on an existing trace instance.
-
-```typescript
-trace.setTraceId('abc-123-def');
-```
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `traceId` | `string` | The trace ID to use |
-
-Returns: `this` for chaining
-
-**Notes:**
-- Ignored if the trace is already closed (logs a warning)
-- Prefer passing `traceId` at creation time via `client.trace({ traceId: '...' })`
 
 #### `close(reason?)`
 

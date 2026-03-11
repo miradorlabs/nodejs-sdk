@@ -577,76 +577,11 @@ export class Trace {
   }
 
   /**
-   * @deprecated Use flush() instead. Builder methods now auto-flush via microtask batching.
-   * Kept for backward compatibility — performs a direct synchronous send and returns the traceId.
-   * @returns The trace ID if successful, undefined if failed
-   */
-  async create(): Promise<string | undefined> {
-    if (this.closed) {
-      console.warn('[MiradorTrace] Trace is closed, cannot create');
-      return undefined;
-    }
-
-    // Cancel any pending microtask flush so we don't double-send
-    this.microtaskScheduled = false;
-
-    // Capture and clear pending data
-    const traceData = this.buildTraceData();
-    this.clearPending();
-
-    // Wait for any prior flushes to complete first
-    await this.flushQueue;
-
-    const request: FlushTraceRequest = {
-      traceId: this.traceId,
-      name: this.name,
-      data: traceData,
-      sendClientTimestamp: new Date(),
-    };
-
-    try {
-      const response = await this.retryWithBackoff(
-        () => this.client._flushTrace(request),
-        'FlushTrace'
-      );
-
-      if (response.status?.code !== ResponseStatus_StatusCode.STATUS_CODE_SUCCESS) {
-        console.error('[MiradorTrace] FlushTrace failed:', response.status?.errorMessage || 'Unknown error');
-        return undefined;
-      }
-
-      this.flushedOnce = true;
-      if (this.autoKeepAlive) {
-        this.startKeepAlive();
-      }
-      return this.traceId;
-    } catch (error) {
-      console.error('[MiradorTrace] FlushTrace error after retries:', error);
-      return undefined;
-    }
-  }
-
-  /**
    * Get the trace ID (available immediately — generated client-side)
    * @returns The trace ID
    */
   getTraceId(): string {
     return this.traceId;
-  }
-
-  /**
-   * @deprecated Pass `traceId` to `client.trace({ traceId })` instead.
-   * Set the trace ID on an existing trace instance.
-   * @param traceId The trace ID to use
-   * @returns This trace builder for chaining
-   */
-  setTraceId(traceId: string): this {
-    if (this.closed) {
-      console.warn('[MiradorTrace] Trace is closed. Ignoring setTraceId call.');
-      return this;
-    }
-    this.traceId = traceId;
-    return this;
   }
 
   /**

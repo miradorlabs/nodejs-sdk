@@ -63,8 +63,8 @@ async function create(name: string) {
     return;
   }
   currentTrace = client.trace({ name });
-  traceId = null;
-  log.success(`Created trace: ${name}`);
+  traceId = currentTrace.getTraceId();
+  log.success(`Created trace: ${name} (ID: ${traceId})`);
 }
 
 function attr(key: string, value: string) {
@@ -157,33 +157,8 @@ function flush() {
   }
   currentTrace.flush();
   log.success('Flush triggered (fire-and-forget)');
-  // Check for traceId after a short delay (flush is async internally)
-  setTimeout(() => {
-    const id = currentTrace?.getTraceId();
-    if (id && !traceId) {
-      traceId = id;
-      log.info(`Trace ID assigned: ${traceId}`);
-    }
-  }, 500);
 }
 
-async function submit() {
-  if (!currentTrace) {
-    log.error('No trace. Run "create <name>" first');
-    return;
-  }
-  log.info('Submitting trace...');
-  try {
-    traceId = (await currentTrace.create()) || null;
-    if (traceId) {
-      log.success(`Trace submitted! ID: ${traceId}`);
-    } else {
-      log.error('Failed to submit trace');
-    }
-  } catch (err) {
-    log.error(`Submit failed: ${err instanceof Error ? err.message : err}`);
-  }
-}
 
 async function close(reason?: string) {
   if (!currentTrace) {
@@ -204,7 +179,7 @@ function status() {
   if (!currentTrace) {
     log.info('No active trace');
   } else {
-    log.info(`Active trace${traceId ? ` (ID: ${traceId})` : ' (not submitted)'}`);
+    log.info(`Active trace (ID: ${traceId})`);
   }
 }
 
@@ -220,7 +195,6 @@ ${c.bold}Commands:${c.reset}
   ${c.green}tx <hash> <chain> [details]${c.reset} Add a transaction hint
   ${c.green}safemsg <hash> <chain> [details]${c.reset} Add a Safe message hint
   ${c.green}flush${c.reset}                      Flush pending data (fire-and-forget)
-  ${c.green}submit${c.reset}                     Submit the trace (deprecated, use flush)
   ${c.green}close [reason]${c.reset}             Close the trace
   ${c.green}status${c.reset}                     Show current trace status
   ${c.green}help${c.reset}                       Show this help
@@ -314,9 +288,6 @@ async function interactive() {
         break;
       case 'flush':
         flush();
-        break;
-      case 'submit':
-        await submit();
         break;
       case 'close':
         await close(args.slice(1).join(' '));
