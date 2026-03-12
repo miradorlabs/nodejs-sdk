@@ -18,6 +18,9 @@ describe('Client', () => {
   let client: Client;
   let mockApiGatewayClient: jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>;
 
+  const flushMicrotasks = () => new Promise<void>(resolve => queueMicrotask(resolve));
+  const flushPromises = () => new Promise<void>(resolve => setTimeout(resolve, 0));
+
   beforeEach(() => {
     // Clear all mocks before each test
     jest.clearAllMocks();
@@ -26,12 +29,13 @@ describe('Client', () => {
     client = new Client("test-api-key");
 
     // Create mock for IngestGatewayServiceClientImpl with defaults
-    // UpdateTrace, CloseTrace, KeepAlive are needed because auto-flush (via scheduleFlush)
-    // can trigger CreateTrace/UpdateTrace asynchronously during tests.
+    // FlushTrace, CloseTrace, KeepAlive are needed because auto-flush (via scheduleFlush)
+    // can trigger FlushTrace asynchronously during tests.
     mockApiGatewayClient = {
-      CreateTrace: jest.fn(),
-      UpdateTrace: jest.fn().mockResolvedValue({
+      FlushTrace: jest.fn().mockResolvedValue({
         status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
+        traceId: '',
+        created: true,
       }),
       CloseTrace: jest.fn().mockResolvedValue({ accepted: true }),
       KeepAlive: jest.fn().mockResolvedValue({ accepted: true }),
@@ -93,25 +97,29 @@ describe('Client', () => {
       expect(trace).toBeInstanceOf(Trace);
     });
 
-    it('should build and create a simple trace', async () => {
-      const mockResponse: apiGateway.CreateTraceResponse = {
+    it('should build and flush a simple trace', async () => {
+      const mockResponse: apiGateway.FlushTraceResponse = {
         status: {
           code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
           errorMessage: undefined
         },
         traceId: 'trace-builder-123',
+      created: true,
       };
 
-      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+      mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
 
-      const traceId = await client.trace({ name: 'swap_execution', captureStackTrace: false })
+      const trace = client.trace({ name: 'swap_execution', captureStackTrace: false })
         .addAttribute('user', '0xabc...')
-        .addTag('dex')
-        .create();
+        .addTag('dex');
+      trace.flush();
+      await flushMicrotasks();
+      await flushPromises();
+      const traceId = trace.getTraceId();
 
-      expect(traceId).toBe('trace-builder-123');
+      expect(traceId).toHaveLength(32);
 
-      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
       expect(calls.name).toBe('swap_execution');
       expect(calls.data?.attributes?.[0]?.attributes).toEqual({ user: '0xabc...' });
       expect(calls.data?.tags?.[0]?.tags).toEqual(['dex']);
@@ -120,23 +128,26 @@ describe('Client', () => {
     });
 
     it('should handle multiple attributes with different types', async () => {
-      const mockResponse: apiGateway.CreateTraceResponse = {
+      const mockResponse: apiGateway.FlushTraceResponse = {
         status: {
           code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
           errorMessage: undefined
         },
         traceId: 'trace-multi-attr',
+      created: true,
       };
 
-      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+      mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
 
-      await client.trace({ name: 'test', captureStackTrace: false })
+      client.trace({ name: 'test', captureStackTrace: false })
         .addAttribute('stringValue', 'hello')
         .addAttribute('numberValue', 42)
         .addAttribute('booleanValue', true)
-        .create();
+        .flush();
+      await flushMicrotasks();
+      await flushPromises();
 
-      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
       expect(calls.name).toBe('test');
       expect(calls.data?.attributes?.[0]?.attributes).toEqual({
         stringValue: 'hello',
@@ -146,22 +157,25 @@ describe('Client', () => {
     });
 
     it('should stringify object attribute values', async () => {
-      const mockResponse: apiGateway.CreateTraceResponse = {
+      const mockResponse: apiGateway.FlushTraceResponse = {
         status: {
           code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
           errorMessage: undefined
         },
         traceId: 'trace-object-attr',
+      created: true,
       };
 
-      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+      mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
 
-      await client.trace({ name: 'test', captureStackTrace: false })
+      client.trace({ name: 'test', captureStackTrace: false })
         .addAttribute('metadata', { key: 'value', count: 42 })
         .addAttribute('nested', { a: { b: 'c' } })
-        .create();
+        .flush();
+      await flushMicrotasks();
+      await flushPromises();
 
-      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
       expect(calls.data?.attributes?.[0]?.attributes).toEqual({
         metadata: '{"key":"value","count":42}',
         nested: '{"a":{"b":"c"}}',
@@ -169,26 +183,29 @@ describe('Client', () => {
     });
 
     it('should handle addAttributes with multiple key-value pairs including objects', async () => {
-      const mockResponse: apiGateway.CreateTraceResponse = {
+      const mockResponse: apiGateway.FlushTraceResponse = {
         status: {
           code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
           errorMessage: undefined
         },
         traceId: 'trace-batch-attrs',
+      created: true,
       };
 
-      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+      mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
 
-      await client.trace({ name: 'test', captureStackTrace: false })
+      client.trace({ name: 'test', captureStackTrace: false })
         .addAttributes({
           user: '0xabc',
           slippage: 25,
           isPremium: true,
           config: { setting: 'value' },
         })
-        .create();
+        .flush();
+      await flushMicrotasks();
+      await flushPromises();
 
-      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
       expect(calls.data?.attributes?.[0]?.attributes).toEqual({
         user: '0xabc',
         slippage: '25',
@@ -198,47 +215,53 @@ describe('Client', () => {
     });
 
     it('should handle multiple tags', async () => {
-      const mockResponse: apiGateway.CreateTraceResponse = {
+      const mockResponse: apiGateway.FlushTraceResponse = {
         status: {
           code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
           errorMessage: undefined
         },
         traceId: 'trace-tags',
+      created: true,
       };
 
-      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+      mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
 
-      await client.trace({ name: 'test' })
+      client.trace({ name: 'test' })
         .addTag('tag1')
         .addTag('tag2')
         .addTags(['tag3', 'tag4'])
-        .create();
+        .flush();
+      await flushMicrotasks();
+      await flushPromises();
 
-      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
       expect(calls.data?.tags?.[0]?.tags).toEqual(['tag1', 'tag2', 'tag3', 'tag4']);
     });
 
     it('should handle events with different detail types', async () => {
-      const mockResponse: apiGateway.CreateTraceResponse = {
+      const mockResponse: apiGateway.FlushTraceResponse = {
         status: {
           code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
           errorMessage: undefined
         },
         traceId: 'trace-events',
+      created: true,
       };
 
-      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+      mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
 
       const timestamp1 = new Date('2024-01-01T00:00:00Z');
       const timestamp2 = new Date('2024-01-01T00:00:05Z');
 
-      await client.trace({ name: 'test' })
+      client.trace({ name: 'test' })
         .addEvent('event1', 'string details', timestamp1)
         .addEvent('event2', { key: 'value', count: 42 }, timestamp2)
         .addEvent('event3') // no details, auto timestamp
-        .create();
+        .flush();
+      await flushMicrotasks();
+      await flushPromises();
 
-      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
       const events = calls.data?.events;
       expect(events).toHaveLength(3);
       expect(events?.[0].name).toBe('event1');
@@ -252,21 +275,24 @@ describe('Client', () => {
     });
 
     it('should set transaction hash hint via addTxHint with ChainName', async () => {
-      const mockResponse: apiGateway.CreateTraceResponse = {
+      const mockResponse: apiGateway.FlushTraceResponse = {
         status: {
           code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
           errorMessage: undefined
         },
         traceId: 'trace-txhint',
+      created: true,
       };
 
-      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+      mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
 
-      await client.trace({ name: 'swap' })
+      client.trace({ name: 'swap' })
         .addTxHint('0x123...', 'ethereum', 'Swap transaction')
-        .create();
+        .flush();
+      await flushMicrotasks();
+      await flushPromises();
 
-      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
       const txHashHints = calls.data?.txHashHints;
       expect(txHashHints).toHaveLength(1);
       expect(txHashHints?.[0]?.txHash).toBe('0x123...');
@@ -276,92 +302,107 @@ describe('Client', () => {
     });
 
     it('should handle different chain names', async () => {
-      const mockResponse: apiGateway.CreateTraceResponse = {
+      const mockResponse: apiGateway.FlushTraceResponse = {
         status: {
           code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
           errorMessage: undefined
         },
         traceId: 'trace-chains',
+      created: true,
       };
 
-      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+      mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
 
       // Test polygon
-      await client.trace({ name: 'test' })
+      client.trace({ name: 'test' })
         .addTxHint('0xpolygon...', 'polygon')
-        .create();
+        .flush();
+      await flushMicrotasks();
+      await flushPromises();
 
-      let calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      let calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
       expect(calls.data?.txHashHints?.[0]?.chain).toBe(Chain.CHAIN_POLYGON);
 
       // Test arbitrum
-      mockApiGatewayClient.CreateTrace.mockClear();
-      await client.trace({ name: 'test' })
+      mockApiGatewayClient.FlushTrace.mockClear();
+      client.trace({ name: 'test' })
         .addTxHint('0xarbitrum...', 'arbitrum')
-        .create();
+        .flush();
+      await flushMicrotasks();
+      await flushPromises();
 
-      calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
       expect(calls.data?.txHashHints?.[0]?.chain).toBe(Chain.CHAIN_ARBITRUM);
 
       // Test base
-      mockApiGatewayClient.CreateTrace.mockClear();
-      await client.trace({ name: 'test' })
+      mockApiGatewayClient.FlushTrace.mockClear();
+      client.trace({ name: 'test' })
         .addTxHint('0xbase...', 'base')
-        .create();
+        .flush();
+      await flushMicrotasks();
+      await flushPromises();
 
-      calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
       expect(calls.data?.txHashHints?.[0]?.chain).toBe(Chain.CHAIN_BASE);
 
       // Test optimism
-      mockApiGatewayClient.CreateTrace.mockClear();
-      await client.trace({ name: 'test' })
+      mockApiGatewayClient.FlushTrace.mockClear();
+      client.trace({ name: 'test' })
         .addTxHint('0xoptimism...', 'optimism')
-        .create();
+        .flush();
+      await flushMicrotasks();
+      await flushPromises();
 
-      calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
       expect(calls.data?.txHashHints?.[0]?.chain).toBe(Chain.CHAIN_OPTIMISM);
 
       // Test bsc
-      mockApiGatewayClient.CreateTrace.mockClear();
-      await client.trace({ name: 'test' })
+      mockApiGatewayClient.FlushTrace.mockClear();
+      client.trace({ name: 'test' })
         .addTxHint('0xbsc...', 'bsc')
-        .create();
+        .flush();
+      await flushMicrotasks();
+      await flushPromises();
 
-      calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
       expect(calls.data?.txHashHints?.[0]?.chain).toBe(Chain.CHAIN_BSC);
     });
 
-    it('should create without txHashHint when not set', async () => {
-      const mockResponse: apiGateway.CreateTraceResponse = {
+    it('should flush without txHashHint when not set', async () => {
+      const mockResponse: apiGateway.FlushTraceResponse = {
         status: {
           code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
           errorMessage: undefined
         },
         traceId: 'trace-no-tx',
+      created: true,
       };
 
-      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+      mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
 
-      await client.trace({ name: 'test' })
+      client.trace({ name: 'test' })
         .addTag('no-tx')
-        .create();
+        .flush();
+      await flushMicrotasks();
+      await flushPromises();
 
-      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
       expect(calls.data?.txHashHints).toEqual([]);
     });
 
     it('should build a complex trace with all features', async () => {
-      const mockResponse: apiGateway.CreateTraceResponse = {
+      const mockResponse: apiGateway.FlushTraceResponse = {
         status: {
           code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
           errorMessage: undefined
         },
         traceId: 'trace-complex',
+      created: true,
       };
 
-      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+      mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
 
-      const traceId = await client.trace({ name: 'swap_execution', captureStackTrace: false })
+      const trace = client.trace({ name: 'swap_execution', captureStackTrace: false })
         .addAttribute('user', '0xabc...')
         .addAttribute('slippage_bps', 25)
         .addAttribute('metadata', { version: '1.0' })
@@ -370,12 +411,15 @@ describe('Client', () => {
         .addEvent('wallet_connected', 'MetaMask connected')
         .addEvent('quote_received', { amount: 100, token: 'USDC' })
         .addEvent('tx_signed')
-        .addTxHint('0x123...', 'ethereum')
-        .create();
+        .addTxHint('0x123...', 'ethereum');
+      trace.flush();
+      await flushMicrotasks();
+      await flushPromises();
+      const traceId = trace.getTraceId();
 
-      expect(traceId).toBe('trace-complex');
+      expect(traceId).toHaveLength(32);
 
-      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
       expect(calls.name).toBe('swap_execution');
       expect(calls.data?.attributes?.[0]?.attributes).toEqual({
         user: '0xabc...',
@@ -388,39 +432,42 @@ describe('Client', () => {
       expect(calls.data?.txHashHints?.[0]?.chain).toBe(Chain.CHAIN_ETHEREUM);
     });
 
-    it('should return undefined when trace creation fails with error status', async () => {
-      const mockResponse: apiGateway.CreateTraceResponse = {
+    it('should log error when flush receives error status', async () => {
+      const mockResponse: apiGateway.FlushTraceResponse = {
         status: {
           code: ResponseStatus_StatusCode.STATUS_CODE_INTERNAL_ERROR,
           errorMessage: 'Something went wrong'
         },
         traceId: '',
+      created: true,
       };
 
-      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+      mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
 
-      const traceId = await client.trace({ name: 'test' })
+      client.trace({ name: 'test' })
         .addTag('error-test')
-        .create();
+        .flush();
+      await flushMicrotasks();
+      await flushPromises();
 
-      expect(traceId).toBeUndefined();
       expect(mockConsoleError).toHaveBeenCalledWith(
-        '[MiradorTrace] CreateTrace failed:',
+        '[MiradorTrace] FlushTrace failed:',
         'Something went wrong'
       );
     });
 
-    it('should return undefined and log error when exception is thrown', async () => {
+    it('should log error when exception is thrown during flush', async () => {
       const mockError = new Error('Network error');
-      mockApiGatewayClient.CreateTrace.mockRejectedValue(mockError);
+      mockApiGatewayClient.FlushTrace.mockRejectedValue(mockError);
 
-      const traceId = await client.trace({ name: 'test' })
+      client.trace({ name: 'test', maxRetries: 0 })
         .addTag('exception-test')
-        .create();
+        .flush();
+      await flushMicrotasks();
+      await flushPromises();
 
-      expect(traceId).toBeUndefined();
       expect(mockConsoleError).toHaveBeenCalledWith(
-        '[MiradorTrace] CreateTrace error after retries:',
+        '[MiradorTrace] FlushTrace error after retries:',
         mockError
       );
     });
@@ -428,23 +475,25 @@ describe('Client', () => {
 
   describe('multiple traces', () => {
     it('should create multiple independent trace builders', async () => {
-      const mockResponse1: apiGateway.CreateTraceResponse = {
+      const mockResponse1: apiGateway.FlushTraceResponse = {
         status: {
           code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
           errorMessage: undefined
         },
         traceId: 'trace-1',
+      created: true,
       };
 
-      const mockResponse2: apiGateway.CreateTraceResponse = {
+      const mockResponse2: apiGateway.FlushTraceResponse = {
         status: {
           code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
           errorMessage: undefined
         },
         traceId: 'trace-2',
+      created: true,
       };
 
-      mockApiGatewayClient.CreateTrace
+      mockApiGatewayClient.FlushTrace
         .mockResolvedValueOnce(mockResponse1)
         .mockResolvedValueOnce(mockResponse2);
 
@@ -456,25 +505,34 @@ describe('Client', () => {
         .addAttribute('id', '2')
         .addTag('second');
 
-      const result1 = await trace1.create();
-      const result2 = await trace2.create();
+      trace1.flush();
+      await flushMicrotasks();
+      await flushPromises();
+      const result1 = trace1.getTraceId();
+      trace2.flush();
+      await flushMicrotasks();
+      await flushPromises();
+      const result2 = trace2.getTraceId();
 
-      expect(result1).toBe('trace-1');
-      expect(result2).toBe('trace-2');
-      expect(mockApiGatewayClient.CreateTrace).toHaveBeenCalledTimes(2);
+      expect(result1).toHaveLength(32);
+      expect(result2).toHaveLength(32);
+      expect(result1).not.toBe(result2); // Each trace gets a unique ID
+      // At least 2 FlushTrace calls (auto-flush may add more)
+      expect(mockApiGatewayClient.FlushTrace.mock.calls.length).toBeGreaterThanOrEqual(2);
     });
   });
 
   describe('CHAIN_MAP coverage', () => {
     it('should map all ChainName values to valid Chain enum values', async () => {
-      const mockResponse: apiGateway.CreateTraceResponse = {
+      const mockResponse: apiGateway.FlushTraceResponse = {
         status: {
           code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
           errorMessage: undefined
         },
         traceId: 'trace-chain-map',
+      created: true,
       };
-      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+      mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
 
       // All supported chain names
       const chainNames: ChainName[] = ['ethereum', 'polygon', 'arbitrum', 'base', 'optimism', 'bsc'];
@@ -490,13 +548,15 @@ describe('Client', () => {
       };
 
       for (const chainName of chainNames) {
-        mockApiGatewayClient.CreateTrace.mockClear();
+        mockApiGatewayClient.FlushTrace.mockClear();
 
-        await client.trace({ name: 'test' })
+        client.trace({ name: 'test' })
           .addTxHint('0x123', chainName)
-          .create();
+          .flush();
+        await flushMicrotasks();
+        await flushPromises();
 
-        const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+        const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
         expect(calls.data?.txHashHints?.[0]?.chain).toBe(expectedChainEnums[chainName]);
       }
     });
@@ -515,23 +575,26 @@ describe('Client', () => {
 
   describe('addTxInputData', () => {
     it('should add an event with the correct name and input data', async () => {
-      const mockResponse: apiGateway.CreateTraceResponse = {
+      const mockResponse: apiGateway.FlushTraceResponse = {
         status: {
           code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
           errorMessage: undefined
         },
         traceId: 'trace-tx-input',
+      created: true,
       };
 
-      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+      mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
 
       const inputData = '0xa9059cbb0000000000000000000000001234567890abcdef';
 
-      await client.trace({ name: 'test', captureStackTrace: false })
+      client.trace({ name: 'test', captureStackTrace: false })
         .addTxInputData(inputData)
-        .create();
+        .flush();
+      await flushMicrotasks();
+      await flushPromises();
 
-      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
       const events = calls.data?.events;
       expect(events).toHaveLength(1);
       expect(events?.[0].name).toBe('Tx input data');
@@ -545,19 +608,22 @@ describe('Client', () => {
     });
 
     it('should be ignored on a closed trace', async () => {
-      const mockResponse: apiGateway.CreateTraceResponse = {
+      const mockResponse: apiGateway.FlushTraceResponse = {
         status: {
           code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
           errorMessage: undefined
         },
         traceId: 'trace-closed-input',
+      created: true,
       };
 
-      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+      mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
       (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).CloseTrace = jest.fn().mockResolvedValue({ accepted: true });
 
       const trace = client.trace({ name: 'test' });
-      await trace.create();
+      trace.flush();
+      await flushMicrotasks();
+      await flushPromises();
       await trace.close();
 
       trace.addTxInputData('0xdead');
@@ -567,24 +633,27 @@ describe('Client', () => {
     });
 
     it('should work alongside other builder methods', async () => {
-      const mockResponse: apiGateway.CreateTraceResponse = {
+      const mockResponse: apiGateway.FlushTraceResponse = {
         status: {
           code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
           errorMessage: undefined
         },
         traceId: 'trace-combined',
+      created: true,
       };
 
-      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+      mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
 
-      await client.trace({ name: 'swap', captureStackTrace: false })
+      client.trace({ name: 'swap', captureStackTrace: false })
         .addAttribute('user', '0xabc')
         .addTxHint('0x123', 'ethereum')
         .addTxInputData('0xa9059cbb00000000')
         .addTag('bridge')
-        .create();
+        .flush();
+      await flushMicrotasks();
+      await flushPromises();
 
-      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
       expect(calls.data?.attributes?.[0]?.attributes).toEqual({ user: '0xabc' });
       expect(calls.data?.txHashHints).toHaveLength(1);
       expect(calls.data?.events).toHaveLength(1);
@@ -596,22 +665,26 @@ describe('Client', () => {
 
   describe('stack trace features', () => {
     it('should create trace with captureStackTrace option', async () => {
-      const mockResponse: apiGateway.CreateTraceResponse = {
+      const mockResponse: apiGateway.FlushTraceResponse = {
         status: {
           code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
           errorMessage: undefined
         },
         traceId: 'trace-with-stack',
+      created: true,
       };
 
-      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+      mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
 
-      const traceId = await client.trace({ name: 'test', captureStackTrace: true })
-        .create();
+      const trace = client.trace({ name: 'test', captureStackTrace: true });
+      trace.flush();
+      await flushMicrotasks();
+      await flushPromises();
+      const traceId = trace.getTraceId();
 
-      expect(traceId).toBe('trace-with-stack');
+      expect(traceId).toHaveLength(32);
 
-      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
       expect(calls.data?.attributes).toBeDefined();
       expect(calls.data?.attributes?.length).toBeGreaterThan(0);
 
@@ -628,20 +701,23 @@ describe('Client', () => {
     });
 
     it('should create trace without stack trace when option is false', async () => {
-      const mockResponse: apiGateway.CreateTraceResponse = {
+      const mockResponse: apiGateway.FlushTraceResponse = {
         status: {
           code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
           errorMessage: undefined
         },
         traceId: 'trace-no-stack',
+      created: true,
       };
 
-      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+      mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
 
-      await client.trace({ name: 'test', captureStackTrace: false })
-        .create();
+      client.trace({ name: 'test', captureStackTrace: false })
+        .flush();
+      await flushMicrotasks();
+      await flushPromises();
 
-      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
       const attrs = calls.data?.attributes?.[0]?.attributes;
 
       // Should not have stack trace attributes
@@ -649,21 +725,24 @@ describe('Client', () => {
     });
 
     it('should add event with captureStackTrace option', async () => {
-      const mockResponse: apiGateway.CreateTraceResponse = {
+      const mockResponse: apiGateway.FlushTraceResponse = {
         status: {
           code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
           errorMessage: undefined
         },
         traceId: 'trace-event-stack',
+      created: true,
       };
 
-      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+      mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
 
-      await client.trace({ name: 'test' })
+      client.trace({ name: 'test' })
         .addEvent('error_occurred', { code: 500 }, { captureStackTrace: true })
-        .create();
+        .flush();
+      await flushMicrotasks();
+      await flushPromises();
 
-      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
       expect(calls.data?.events).toHaveLength(1);
 
       const eventDetails = JSON.parse(calls.data?.events?.[0]?.details || '{}');
@@ -673,21 +752,24 @@ describe('Client', () => {
     });
 
     it('should add event with string details and captureStackTrace', async () => {
-      const mockResponse: apiGateway.CreateTraceResponse = {
+      const mockResponse: apiGateway.FlushTraceResponse = {
         status: {
           code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
           errorMessage: undefined
         },
         traceId: 'trace-string-stack',
+      created: true,
       };
 
-      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+      mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
 
-      await client.trace({ name: 'test' })
+      client.trace({ name: 'test' })
         .addEvent('message', 'Something happened', { captureStackTrace: true })
-        .create();
+        .flush();
+      await flushMicrotasks();
+      await flushPromises();
 
-      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
       const eventDetails = JSON.parse(calls.data?.events?.[0]?.details || '{}');
 
       expect(eventDetails.message).toBe('Something happened');
@@ -695,43 +777,49 @@ describe('Client', () => {
     });
 
     it('should support legacy timestamp parameter for addEvent', async () => {
-      const mockResponse: apiGateway.CreateTraceResponse = {
+      const mockResponse: apiGateway.FlushTraceResponse = {
         status: {
           code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
           errorMessage: undefined
         },
         traceId: 'trace-legacy-timestamp',
+      created: true,
       };
 
-      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+      mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
 
       const customTimestamp = new Date('2024-01-15T10:00:00Z');
 
-      await client.trace({ name: 'test' })
+      client.trace({ name: 'test' })
         .addEvent('legacy_event', 'details', customTimestamp)
-        .create();
+        .flush();
+      await flushMicrotasks();
+      await flushPromises();
 
-      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
       expect(calls.data?.events?.[0]?.timestamp).toEqual(customTimestamp);
       expect(calls.data?.events?.[0]?.details).toBe('details');
     });
 
     it('should add stack trace via addStackTrace method', async () => {
-      const mockResponse: apiGateway.CreateTraceResponse = {
+      const mockResponse: apiGateway.FlushTraceResponse = {
         status: {
           code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
           errorMessage: undefined
         },
         traceId: 'trace-add-stack',
+      created: true,
       };
 
-      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+      mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
 
-      await client.trace({ name: 'test' })
+      client.trace({ name: 'test' })
         .addStackTrace('checkpoint', { stage: 'validation' })
-        .create();
+        .flush();
+      await flushMicrotasks();
+      await flushPromises();
 
-      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
       expect(calls.data?.events).toHaveLength(1);
       expect(calls.data?.events?.[0]?.name).toBe('checkpoint');
 
@@ -742,43 +830,49 @@ describe('Client', () => {
     });
 
     it('should use default event name for addStackTrace', async () => {
-      const mockResponse: apiGateway.CreateTraceResponse = {
+      const mockResponse: apiGateway.FlushTraceResponse = {
         status: {
           code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
           errorMessage: undefined
         },
         traceId: 'trace-default-stack',
+      created: true,
       };
 
-      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+      mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
 
-      await client.trace({ name: 'test' })
+      client.trace({ name: 'test' })
         .addStackTrace()
-        .create();
+        .flush();
+      await flushMicrotasks();
+      await flushPromises();
 
-      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
       expect(calls.data?.events?.[0]?.name).toBe('stack_trace');
     });
 
     it('should add existing stack trace via addExistingStackTrace', async () => {
-      const mockResponse: apiGateway.CreateTraceResponse = {
+      const mockResponse: apiGateway.FlushTraceResponse = {
         status: {
           code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
           errorMessage: undefined
         },
         traceId: 'trace-existing-stack',
+      created: true,
       };
 
-      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+      mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
 
       // Capture a stack trace
       const capturedStack = captureStackTrace();
 
-      await client.trace({ name: 'test' })
+      client.trace({ name: 'test' })
         .addExistingStackTrace(capturedStack, 'deferred_trace', { reason: 'async' })
-        .create();
+        .flush();
+      await flushMicrotasks();
+      await flushPromises();
 
-      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
       expect(calls.data?.events).toHaveLength(1);
       expect(calls.data?.events?.[0]?.name).toBe('deferred_trace');
 
@@ -789,20 +883,23 @@ describe('Client', () => {
     });
 
     it('should ignore stack trace methods on closed trace', async () => {
-      const mockResponse: apiGateway.CreateTraceResponse = {
+      const mockResponse: apiGateway.FlushTraceResponse = {
         status: {
           code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
           errorMessage: undefined
         },
         traceId: 'trace-closed-stack',
+      created: true,
       };
 
-      // Mock both CreateTrace and CloseTrace
-      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+      // Mock both FlushTrace and CloseTrace
+      mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
       (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).CloseTrace = jest.fn().mockResolvedValue({ accepted: true });
 
       const trace = client.trace({ name: 'test' });
-      await trace.create();
+      trace.flush();
+      await flushMicrotasks();
+      await flushPromises();
       await trace.close();
 
       // These should be ignored (trace is closed)
@@ -826,49 +923,58 @@ describe('Client', () => {
 
   describe('addTxHint with TxHintOptions', () => {
     it('should accept string details (backwards compatible)', async () => {
-      const mockResponse: apiGateway.CreateTraceResponse = {
+      const mockResponse: apiGateway.FlushTraceResponse = {
         status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
         traceId: 'trace-hint-string',
+      created: true,
       };
-      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+      mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
 
-      await client.trace({ name: 'test', captureStackTrace: false })
+      client.trace({ name: 'test', captureStackTrace: false })
         .addTxHint('0xabc', 'ethereum', 'simple string')
-        .create();
+        .flush();
+      await flushMicrotasks();
+      await flushPromises();
 
-      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
       expect(calls.data?.txHashHints?.[0]?.details).toBe('simple string');
     });
 
     it('should accept TxHintOptions with input', async () => {
-      const mockResponse: apiGateway.CreateTraceResponse = {
+      const mockResponse: apiGateway.FlushTraceResponse = {
         status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
         traceId: 'trace-hint-options',
+      created: true,
       };
-      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+      mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
 
-      await client.trace({ name: 'test', captureStackTrace: false })
+      client.trace({ name: 'test', captureStackTrace: false })
         .addTxHint('0xabc', 'ethereum', { input: '0xa9059cbb...' })
-        .create();
+        .flush();
+      await flushMicrotasks();
+      await flushPromises();
 
-      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
       const inputEvent = calls.data?.events?.find((e: { name?: string }) => e.name === 'Tx input data');
       expect(inputEvent).toBeDefined();
       expect(inputEvent?.details).toBe('0xa9059cbb...');
     });
 
     it('should accept TxHintOptions with input and details', async () => {
-      const mockResponse: apiGateway.CreateTraceResponse = {
+      const mockResponse: apiGateway.FlushTraceResponse = {
         status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
         traceId: 'trace-hint-both',
+      created: true,
       };
-      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+      mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
 
-      await client.trace({ name: 'test', captureStackTrace: false })
+      client.trace({ name: 'test', captureStackTrace: false })
         .addTxHint('0xabc', 'ethereum', { input: '0xa9059cbb...', details: 'swap' })
-        .create();
+        .flush();
+      await flushMicrotasks();
+      await flushPromises();
 
-      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
       const inputEvent = calls.data?.events?.find((e: { name?: string }) => e.name === 'Tx input data');
       expect(inputEvent).toBeDefined();
       expect(inputEvent?.details).toBe('0xa9059cbb...');
@@ -878,17 +984,20 @@ describe('Client', () => {
 
   describe('addSafeMsgHint', () => {
     it('should add a safe message hint with chain and message hash', async () => {
-      const mockResponse: apiGateway.CreateTraceResponse = {
+      const mockResponse: apiGateway.FlushTraceResponse = {
         status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
         traceId: 'trace-safemsg',
+      created: true,
       };
-      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+      mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
 
-      await client.trace({ name: 'test', captureStackTrace: false })
+      client.trace({ name: 'test', captureStackTrace: false })
         .addSafeMsgHint('0xmsgHash123', 'ethereum')
-        .create();
+        .flush();
+      await flushMicrotasks();
+      await flushPromises();
 
-      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
       const safeMsgHints = calls.data?.safeMsgHints;
       expect(safeMsgHints).toHaveLength(1);
       expect(safeMsgHints?.[0]?.messageHash).toBe('0xmsgHash123');
@@ -897,17 +1006,20 @@ describe('Client', () => {
     });
 
     it('should add a safe message hint with details', async () => {
-      const mockResponse: apiGateway.CreateTraceResponse = {
+      const mockResponse: apiGateway.FlushTraceResponse = {
         status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
         traceId: 'trace-safemsg-details',
+      created: true,
       };
-      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+      mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
 
-      await client.trace({ name: 'test', captureStackTrace: false })
+      client.trace({ name: 'test', captureStackTrace: false })
         .addSafeMsgHint('0xmsgHash456', 'polygon', 'multisig approval')
-        .create();
+        .flush();
+      await flushMicrotasks();
+      await flushPromises();
 
-      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
       const safeMsgHints = calls.data?.safeMsgHints;
       expect(safeMsgHints?.[0]?.messageHash).toBe('0xmsgHash456');
       expect(safeMsgHints?.[0]?.chain).toBe(Chain.CHAIN_POLYGON);
@@ -915,18 +1027,21 @@ describe('Client', () => {
     });
 
     it('should support multiple safe message hints', async () => {
-      const mockResponse: apiGateway.CreateTraceResponse = {
+      const mockResponse: apiGateway.FlushTraceResponse = {
         status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
         traceId: 'trace-safemsg-multi',
+      created: true,
       };
-      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+      mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
 
-      await client.trace({ name: 'test', captureStackTrace: false })
+      client.trace({ name: 'test', captureStackTrace: false })
         .addSafeMsgHint('0xmsg1', 'ethereum')
         .addSafeMsgHint('0xmsg2', 'base', 'second hint')
-        .create();
+        .flush();
+      await flushMicrotasks();
+      await flushPromises();
 
-      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
       const safeMsgHints = calls.data?.safeMsgHints;
       expect(safeMsgHints).toHaveLength(2);
       expect(safeMsgHints?.[0]?.messageHash).toBe('0xmsg1');
@@ -937,11 +1052,12 @@ describe('Client', () => {
     });
 
     it('should handle different chain names', async () => {
-      const mockResponse: apiGateway.CreateTraceResponse = {
+      const mockResponse: apiGateway.FlushTraceResponse = {
         status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
         traceId: 'trace-safemsg-chains',
+      created: true,
       };
-      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+      mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
 
       const chainTests: Array<{ chain: ChainName; expected: Chain }> = [
         { chain: 'ethereum', expected: Chain.CHAIN_ETHEREUM },
@@ -953,27 +1069,32 @@ describe('Client', () => {
       ];
 
       for (const { chain, expected } of chainTests) {
-        mockApiGatewayClient.CreateTrace.mockClear();
-        mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+        mockApiGatewayClient.FlushTrace.mockClear();
+        mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
 
-        await client.trace({ name: 'test', captureStackTrace: false })
+        client.trace({ name: 'test', captureStackTrace: false })
           .addSafeMsgHint('0xmsg', chain)
-          .create();
+          .flush();
+        await flushMicrotasks();
+        await flushPromises();
 
-        const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+        const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
         expect(calls.data?.safeMsgHints?.[0]?.chain).toBe(expected);
       }
     });
 
     it('should be ignored when trace is closed', async () => {
-      const mockResponse: apiGateway.CreateTraceResponse = {
+      const mockResponse: apiGateway.FlushTraceResponse = {
         status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
         traceId: 'trace-safemsg-closed',
+      created: true,
       };
-      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+      mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
 
       const trace = client.trace({ name: 'test', captureStackTrace: false });
-      await trace.create();
+      trace.flush();
+      await flushMicrotasks();
+      await flushPromises();
       await trace.close();
 
       trace.addSafeMsgHint('0xmsg', 'ethereum');
@@ -987,21 +1108,24 @@ describe('Client', () => {
     });
 
     it('should work alongside txHashHints and other builder methods', async () => {
-      const mockResponse: apiGateway.CreateTraceResponse = {
+      const mockResponse: apiGateway.FlushTraceResponse = {
         status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
         traceId: 'trace-safemsg-combined',
+      created: true,
       };
-      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+      mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
 
-      await client.trace({ name: 'multisig-op', captureStackTrace: false })
+      client.trace({ name: 'multisig-op', captureStackTrace: false })
         .addAttribute('safe_address', '0x1234')
         .addTag('multisig')
         .addEvent('proposed', 'token transfer')
         .addTxHint('0xtx123', 'ethereum')
         .addSafeMsgHint('0xmsg123', 'ethereum', 'approval')
-        .create();
+        .flush();
+      await flushMicrotasks();
+      await flushPromises();
 
-      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
       expect(calls.data?.txHashHints).toHaveLength(1);
       expect(calls.data?.safeMsgHints).toHaveLength(1);
       expect(calls.data?.safeMsgHints?.[0]?.messageHash).toBe('0xmsg123');
@@ -1011,17 +1135,20 @@ describe('Client', () => {
 
   describe('addSafeTxHint', () => {
     it('should add a safe transaction hint with chain and safeTxHash', async () => {
-      const mockResponse: apiGateway.CreateTraceResponse = {
+      const mockResponse: apiGateway.FlushTraceResponse = {
         status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
         traceId: 'trace-safetx',
+      created: true,
       };
-      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+      mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
 
-      await client.trace({ name: 'test', captureStackTrace: false })
+      client.trace({ name: 'test', captureStackTrace: false })
         .addSafeTxHint('0xsafeTxHash123', 'ethereum')
-        .create();
+        .flush();
+      await flushMicrotasks();
+      await flushPromises();
 
-      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
       const safeTxHints = calls.data?.safeTxHints;
       expect(safeTxHints).toHaveLength(1);
       expect(safeTxHints?.[0]?.safeTxHash).toBe('0xsafeTxHash123');
@@ -1030,17 +1157,20 @@ describe('Client', () => {
     });
 
     it('should add a safe transaction hint with details', async () => {
-      const mockResponse: apiGateway.CreateTraceResponse = {
+      const mockResponse: apiGateway.FlushTraceResponse = {
         status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
         traceId: 'trace-safetx-details',
+      created: true,
       };
-      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+      mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
 
-      await client.trace({ name: 'test', captureStackTrace: false })
+      client.trace({ name: 'test', captureStackTrace: false })
         .addSafeTxHint('0xsafeTxHash456', 'polygon', 'multisig execution')
-        .create();
+        .flush();
+      await flushMicrotasks();
+      await flushPromises();
 
-      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
       const safeTxHints = calls.data?.safeTxHints;
       expect(safeTxHints?.[0]?.safeTxHash).toBe('0xsafeTxHash456');
       expect(safeTxHints?.[0]?.chain).toBe(Chain.CHAIN_POLYGON);
@@ -1048,18 +1178,21 @@ describe('Client', () => {
     });
 
     it('should support multiple safe transaction hints', async () => {
-      const mockResponse: apiGateway.CreateTraceResponse = {
+      const mockResponse: apiGateway.FlushTraceResponse = {
         status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
         traceId: 'trace-safetx-multi',
+      created: true,
       };
-      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+      mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
 
-      await client.trace({ name: 'test', captureStackTrace: false })
+      client.trace({ name: 'test', captureStackTrace: false })
         .addSafeTxHint('0xsafetx1', 'ethereum')
         .addSafeTxHint('0xsafetx2', 'base', 'second hint')
-        .create();
+        .flush();
+      await flushMicrotasks();
+      await flushPromises();
 
-      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
       const safeTxHints = calls.data?.safeTxHints;
       expect(safeTxHints).toHaveLength(2);
       expect(safeTxHints?.[0]?.safeTxHash).toBe('0xsafetx1');
@@ -1070,11 +1203,12 @@ describe('Client', () => {
     });
 
     it('should handle different chain names', async () => {
-      const mockResponse: apiGateway.CreateTraceResponse = {
+      const mockResponse: apiGateway.FlushTraceResponse = {
         status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
         traceId: 'trace-safetx-chains',
+      created: true,
       };
-      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+      mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
 
       const chainTests: Array<{ chain: ChainName; expected: Chain }> = [
         { chain: 'ethereum', expected: Chain.CHAIN_ETHEREUM },
@@ -1086,27 +1220,32 @@ describe('Client', () => {
       ];
 
       for (const { chain, expected } of chainTests) {
-        mockApiGatewayClient.CreateTrace.mockClear();
-        mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+        mockApiGatewayClient.FlushTrace.mockClear();
+        mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
 
-        await client.trace({ name: 'test', captureStackTrace: false })
+        client.trace({ name: 'test', captureStackTrace: false })
           .addSafeTxHint('0xsafetx', chain)
-          .create();
+          .flush();
+        await flushMicrotasks();
+        await flushPromises();
 
-        const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+        const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
         expect(calls.data?.safeTxHints?.[0]?.chain).toBe(expected);
       }
     });
 
     it('should be ignored when trace is closed', async () => {
-      const mockResponse: apiGateway.CreateTraceResponse = {
+      const mockResponse: apiGateway.FlushTraceResponse = {
         status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
         traceId: 'trace-safetx-closed',
+      created: true,
       };
-      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+      mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
 
       const trace = client.trace({ name: 'test', captureStackTrace: false });
-      await trace.create();
+      trace.flush();
+      await flushMicrotasks();
+      await flushPromises();
       await trace.close();
 
       trace.addSafeTxHint('0xsafetx', 'ethereum');
@@ -1120,22 +1259,25 @@ describe('Client', () => {
     });
 
     it('should work alongside txHashHints, safeMsgHints, and other builder methods', async () => {
-      const mockResponse: apiGateway.CreateTraceResponse = {
+      const mockResponse: apiGateway.FlushTraceResponse = {
         status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
         traceId: 'trace-safetx-combined',
+      created: true,
       };
-      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+      mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
 
-      await client.trace({ name: 'multisig-exec', captureStackTrace: false })
+      client.trace({ name: 'multisig-exec', captureStackTrace: false })
         .addAttribute('safe_address', '0x1234')
         .addTag('multisig')
         .addEvent('executing', 'token transfer')
         .addTxHint('0xtx123', 'ethereum')
         .addSafeMsgHint('0xmsg123', 'ethereum', 'approval')
         .addSafeTxHint('0xsafetx123', 'ethereum', 'execution')
-        .create();
+        .flush();
+      await flushMicrotasks();
+      await flushPromises();
 
-      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
       expect(calls.data?.txHashHints).toHaveLength(1);
       expect(calls.data?.safeMsgHints).toHaveLength(1);
       expect(calls.data?.safeTxHints).toHaveLength(1);
@@ -1146,50 +1288,59 @@ describe('Client', () => {
 
   describe('addTx', () => {
     it('should extract hash and chain from TransactionLike', async () => {
-      const mockResponse: apiGateway.CreateTraceResponse = {
+      const mockResponse: apiGateway.FlushTraceResponse = {
         status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
         traceId: 'trace-addtx',
+      created: true,
       };
-      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+      mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
 
-      await client.trace({ name: 'test', captureStackTrace: false })
+      client.trace({ name: 'test', captureStackTrace: false })
         .addTx({ hash: '0xabc', chainId: 1 })
-        .create();
+        .flush();
+      await flushMicrotasks();
+      await flushPromises();
 
-      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
       expect(calls.data?.txHashHints?.[0]?.txHash).toBe('0xabc');
       expect(calls.data?.txHashHints?.[0]?.chain).toBe(Chain.CHAIN_ETHEREUM);
     });
 
     it('should extract input data from tx.data', async () => {
-      const mockResponse: apiGateway.CreateTraceResponse = {
+      const mockResponse: apiGateway.FlushTraceResponse = {
         status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
         traceId: 'trace-addtx-data',
+      created: true,
       };
-      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+      mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
 
-      await client.trace({ name: 'test', captureStackTrace: false })
+      client.trace({ name: 'test', captureStackTrace: false })
         .addTx({ hash: '0xabc', chainId: 1, data: '0xa9059cbb...' })
-        .create();
+        .flush();
+      await flushMicrotasks();
+      await flushPromises();
 
-      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
       const inputEvent = calls.data?.events?.find((e: { name?: string }) => e.name === 'Tx input data');
       expect(inputEvent).toBeDefined();
       expect(inputEvent?.details).toBe('0xa9059cbb...');
     });
 
     it('should extract input data from tx.input', async () => {
-      const mockResponse: apiGateway.CreateTraceResponse = {
+      const mockResponse: apiGateway.FlushTraceResponse = {
         status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
         traceId: 'trace-addtx-input',
+      created: true,
       };
-      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+      mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
 
-      await client.trace({ name: 'test', captureStackTrace: false })
+      client.trace({ name: 'test', captureStackTrace: false })
         .addTx({ hash: '0xabc', chainId: 137, input: '0xdeadbeef' })
-        .create();
+        .flush();
+      await flushMicrotasks();
+      await flushPromises();
 
-      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
       expect(calls.data?.txHashHints?.[0]?.chain).toBe(Chain.CHAIN_POLYGON);
       const inputEvent = calls.data?.events?.find((e: { name?: string }) => e.name === 'Tx input data');
       expect(inputEvent).toBeDefined();
@@ -1197,17 +1348,20 @@ describe('Client', () => {
     });
 
     it('should accept explicit chain parameter over chainId', async () => {
-      const mockResponse: apiGateway.CreateTraceResponse = {
+      const mockResponse: apiGateway.FlushTraceResponse = {
         status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
         traceId: 'trace-addtx-chain',
+      created: true,
       };
-      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+      mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
 
-      await client.trace({ name: 'test', captureStackTrace: false })
+      client.trace({ name: 'test', captureStackTrace: false })
         .addTx({ hash: '0xabc', chainId: 1 }, 'polygon')
-        .create();
+        .flush();
+      await flushMicrotasks();
+      await flushPromises();
 
-      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
       expect(calls.data?.txHashHints?.[0]?.chain).toBe(Chain.CHAIN_POLYGON);
     });
 
@@ -1243,11 +1397,12 @@ describe('Client', () => {
     });
 
     it('sendTransaction should send tx and return hash', async () => {
-      const mockResponse: apiGateway.CreateTraceResponse = {
+      const mockResponse: apiGateway.FlushTraceResponse = {
         status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
         traceId: 'trace-sendtx',
+      created: true,
       };
-      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+      mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
 
       const trace = client.trace({ name: 'test', captureStackTrace: false });
       trace.setProvider(mockProvider);
@@ -1329,13 +1484,14 @@ describe('Client', () => {
   });
 
   describe('backwards compatibility', () => {
-    const mockResponse: apiGateway.CreateTraceResponse = {
+    const mockResponse: apiGateway.FlushTraceResponse = {
       status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
       traceId: 'trace-compat',
+      created: true,
     };
 
     beforeEach(() => {
-      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+      mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
       (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).CloseTrace = jest.fn().mockResolvedValue({ accepted: true });
     });
 
@@ -1361,57 +1517,67 @@ describe('Client', () => {
     });
 
     it('should support addTxHint with no options', async () => {
-      await client.trace({ name: 'test', captureStackTrace: false })
+      client.trace({ name: 'test', captureStackTrace: false })
         .addTxHint('0xhash', 'ethereum')
-        .create();
+        .flush();
+      await flushMicrotasks();
+      await flushPromises();
 
-      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
       expect(calls.data?.txHashHints?.[0]?.txHash).toBe('0xhash');
       expect(calls.data?.txHashHints?.[0]?.chain).toBe(Chain.CHAIN_ETHEREUM);
       expect(calls.data?.txHashHints?.[0]?.details).toBeUndefined();
     });
 
     it('should support addTxHint with string details (raw string, not JSON)', async () => {
-      await client.trace({ name: 'test', captureStackTrace: false })
+      client.trace({ name: 'test', captureStackTrace: false })
         .addTxHint('0xhash', 'ethereum', 'swap tx')
-        .create();
+        .flush();
+      await flushMicrotasks();
+      await flushPromises();
 
-      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
       expect(calls.data?.txHashHints?.[0]?.details).toBe('swap tx');
     });
 
     it('should support addTxHint with undefined options', async () => {
-      await client.trace({ name: 'test', captureStackTrace: false })
+      client.trace({ name: 'test', captureStackTrace: false })
         .addTxHint('0xhash', 'base', undefined)
-        .create();
+        .flush();
+      await flushMicrotasks();
+      await flushPromises();
 
-      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
       expect(calls.data?.txHashHints?.[0]?.txHash).toBe('0xhash');
       expect(calls.data?.txHashHints?.[0]?.chain).toBe(Chain.CHAIN_BASE);
       expect(calls.data?.txHashHints?.[0]?.details).toBeUndefined();
     });
 
     it('should support addTxInputData', async () => {
-      await client.trace({ name: 'test', captureStackTrace: false })
+      client.trace({ name: 'test', captureStackTrace: false })
         .addTxInputData('0xabcd')
-        .create();
+        .flush();
+      await flushMicrotasks();
+      await flushPromises();
 
-      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
       expect(calls.data?.events?.[0]?.name).toBe('Tx input data');
       expect(calls.data?.events?.[0]?.details).toBe('0xabcd');
     });
 
     it('should support full legacy workflow with all data present', async () => {
-      await client.trace({ name: 'swap', captureStackTrace: false })
+      client.trace({ name: 'swap', captureStackTrace: false })
         .addAttribute('user', '0x1')
         .addTag('dex')
         .addEvent('started', 'details')
         .addTxHint('0xhash', 'ethereum', 'swap tx')
         .addTxInputData('0xdata')
-        .create();
+        .flush();
+      await flushMicrotasks();
+      await flushPromises();
 
-      expect(mockApiGatewayClient.CreateTrace).toHaveBeenCalledTimes(1);
-      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      expect(mockApiGatewayClient.FlushTrace).toHaveBeenCalledTimes(1);
+      const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
 
       // Verify name
       expect(calls.name).toBe('swap');
@@ -1443,7 +1609,9 @@ describe('Client', () => {
 
     it('should ignore methods on closed trace without crashing', async () => {
       const trace = client.trace({ name: 'test', captureStackTrace: false });
-      await trace.create();
+      trace.flush();
+      await flushMicrotasks();
+      await flushPromises();
       await trace.close();
 
       // These should be ignored (trace is closed)
@@ -1470,13 +1638,15 @@ describe('Client', () => {
         '[MiradorTrace] Trace is closed, ignoring addEvent'
       );
 
-      // create() on a closed trace returns undefined
-      const result = await trace.create();
-      expect(result).toBeUndefined();
+      // flush() on a closed trace is ignored with a warning
+      trace.flush();
+      expect(mockConsoleWarn).toHaveBeenCalledWith('[MiradorTrace] Trace is closed. Ignoring flush call.');
 
       // sendTransaction without provider should still throw
       const traceNoProvider = client.trace({ name: 'test2', captureStackTrace: false });
-      await traceNoProvider.create();
+      traceNoProvider.flush();
+      await flushMicrotasks();
+      await flushPromises();
       await traceNoProvider.close();
       await expect(
         traceNoProvider.sendTransaction({ from: '0x1' })
@@ -1485,21 +1655,22 @@ describe('Client', () => {
   });
 
   describe('provider configuration', () => {
-    const mockResponse: apiGateway.CreateTraceResponse = {
+    const mockResponse: apiGateway.FlushTraceResponse = {
       status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
       traceId: 'trace-provider-cfg',
+      created: true,
     };
 
     let ethProvider: EIP1193Provider;
     let polygonProvider: EIP1193Provider;
 
     beforeEach(() => {
-      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
-      // Mock UpdateTrace for auto-flush scenarios where sendTransaction triggers
-      // scheduleFlush via addEvent, causing CreateTrace to resolve before create()
-      // is called — making create() route through UpdateTrace instead.
-      (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).UpdateTrace =
-        jest.fn().mockResolvedValue({ status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined } });
+      mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
+      // Mock FlushTrace for auto-flush scenarios where sendTransaction triggers
+      // scheduleFlush via addEvent, causing FlushTrace to resolve before flush()
+      // is called.
+      (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).FlushTrace =
+        jest.fn().mockResolvedValue({ status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined }, traceId: '', created: true });
       (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).CloseTrace =
         jest.fn().mockResolvedValue({ accepted: true });
 
@@ -1617,9 +1788,11 @@ describe('Client', () => {
         chainId: 1,
       });
 
-      await trace.create();
+      trace.flush();
+      await flushMicrotasks();
+      await flushPromises();
 
-      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
       const eventNames = calls.data?.events?.map((e: { name?: string; details?: string }) => e.name);
       expect(eventNames).toContain('tx:send');
     });
@@ -1635,14 +1808,14 @@ describe('Client', () => {
         chainId: 1,
       });
 
-      await trace.create();
+      trace.flush();
+      await flushMicrotasks();
+      await flushPromises();
 
-      // With auto-flush, tx:sent ends up in UpdateTrace (tx:send was auto-flushed via CreateTrace)
-      const allEvents = [
-        ...(mockApiGatewayClient.CreateTrace.mock.calls.flatMap((call: [{ data?: { events?: { name?: string; details?: string }[] } }]) => call[0].data?.events ?? [])),
-        ...((mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).UpdateTrace.mock.calls.flatMap((call: [{ data?: { events?: { name?: string; details?: string }[] } }]) => call[0].data?.events ?? [])),
-      ];
-      const sentEvent = allEvents.find((e) => e.name === 'tx:sent');
+      // With auto-flush, events may be split across FlushTrace calls
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const allEvents = mockApiGatewayClient.FlushTrace.mock.calls.flatMap((call: unknown[]) => (call[0] as Record<string, any>).data?.events ?? []);
+      const sentEvent = allEvents.find((e: { name?: string }) => e.name === 'tx:sent');
       expect(sentEvent).toBeDefined();
       const sentDetails = JSON.parse(sentEvent!.details!);
       expect(sentDetails.txHash).toBe('0xethhash');
@@ -1668,14 +1841,14 @@ describe('Client', () => {
         trace.sendTransaction({ from: '0x1', chainId: 1 })
       ).rejects.toThrow('User rejected');
 
-      await trace.create();
+      trace.flush();
+      await flushMicrotasks();
+      await flushPromises();
 
-      // With auto-flush, events may be split across CreateTrace and UpdateTrace
-      const allEvents = [
-        ...(mockApiGatewayClient.CreateTrace.mock.calls.flatMap((call: [{ data?: { events?: { name?: string; details?: string }[] } }]) => call[0].data?.events ?? [])),
-        ...((mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).UpdateTrace.mock.calls.flatMap((call: [{ data?: { events?: { name?: string; details?: string }[] } }]) => call[0].data?.events ?? [])),
-      ];
-      const errorEvent = allEvents.find((e) => e.name === 'tx:error');
+      // With auto-flush, events may be split across FlushTrace calls
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const allEvents = mockApiGatewayClient.FlushTrace.mock.calls.flatMap((call: unknown[]) => (call[0] as Record<string, any>).data?.events ?? []);
+      const errorEvent = allEvents.find((e: { name?: string }) => e.name === 'tx:error');
       expect(errorEvent).toBeDefined();
       const errorDetails = JSON.parse(errorEvent!.details!);
       expect(errorDetails.code).toBe(4001);
@@ -1713,15 +1886,15 @@ describe('Client', () => {
       await trace.sendTransaction({ from: '0xsender', to: '0xa', chainId: 1 });
       await trace.sendTransaction({ from: '0xsender', to: '0xb', chainId: 1 });
 
-      await trace.create();
+      trace.flush();
+      await flushMicrotasks();
+      await flushPromises();
 
-      // With auto-flush, events may be split across CreateTrace and UpdateTrace calls
-      const allEvents = [
-        ...(mockApiGatewayClient.CreateTrace.mock.calls.flatMap((call: [{ data?: { events?: { name?: string; details?: string }[] } }]) => call[0].data?.events ?? [])),
-        ...((mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).UpdateTrace.mock.calls.flatMap((call: [{ data?: { events?: { name?: string; details?: string }[] } }]) => call[0].data?.events ?? [])),
-      ];
-      const sendEvents = allEvents.filter((e) => e.name === 'tx:send');
-      const sentEvents = allEvents.filter((e) => e.name === 'tx:sent');
+      // With auto-flush, events may be split across FlushTrace calls
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const allEvents = mockApiGatewayClient.FlushTrace.mock.calls.flatMap((call: unknown[]) => (call[0] as Record<string, any>).data?.events ?? []);
+      const sendEvents = allEvents.filter((e: { name?: string }) => e.name === 'tx:send');
+      const sentEvents = allEvents.filter((e: { name?: string }) => e.name === 'tx:sent');
       expect(sendEvents).toHaveLength(2);
       expect(sentEvents).toHaveLength(2);
     });
@@ -1739,9 +1912,11 @@ describe('Client', () => {
         chainId: 1,
       });
 
-      await trace.create();
+      trace.flush();
+      await flushMicrotasks();
+      await flushPromises();
 
-      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
       const sendEvent = calls.data?.events?.find((e: { name?: string; details?: string }) => e.name === 'tx:send');
       const sendDetails = JSON.parse(sendEvent.details);
       expect(sendDetails.data).toBe(longData.slice(0, 10) + '...');
@@ -1758,9 +1933,11 @@ describe('Client', () => {
         chainId: 1,
       });
 
-      await trace.create();
+      trace.flush();
+      await flushMicrotasks();
+      await flushPromises();
 
-      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
       const sendEvent = calls.data?.events?.find((e: { name?: string; details?: string }) => e.name === 'tx:send');
       const sendDetails = JSON.parse(sendEvent.details);
       expect(sendDetails.data).toBeUndefined();
@@ -1768,11 +1945,13 @@ describe('Client', () => {
   });
 
   describe('resumed trace (traceId option)', () => {
-    const mockUpdateResponse: apiGateway.UpdateTraceResponse = {
+    const mockUpdateResponse: apiGateway.FlushTraceResponse = {
       status: {
         code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
         errorMessage: undefined,
       },
+      traceId: '',
+      created: false,
     };
 
     const mockKeepAliveResponse: apiGateway.KeepAliveResponse = {
@@ -1784,7 +1963,7 @@ describe('Client', () => {
     };
 
     beforeEach(() => {
-      (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).UpdateTrace =
+      (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).FlushTrace =
         jest.fn().mockResolvedValue(mockUpdateResponse);
       (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).KeepAlive =
         jest.fn().mockResolvedValue(mockKeepAliveResponse);
@@ -1792,38 +1971,30 @@ describe('Client', () => {
         jest.fn().mockResolvedValue(mockCloseResponse);
     });
 
-    it('should send UpdateTrace instead of CreateTrace when traceId is provided via options', async () => {
-      const traceId = await client.trace({ traceId: 'frontend-trace-abc', captureStackTrace: false })
-        .addAttribute('endpoint', '/api/swap')
-        .addTag('backend')
-        .create();
-
-      expect(traceId).toBe('frontend-trace-abc');
-      expect(mockApiGatewayClient.CreateTrace).not.toHaveBeenCalled();
-      expect((mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).UpdateTrace).toHaveBeenCalledTimes(1);
-    });
-
-    it('should send UpdateTrace instead of CreateTrace when traceId is set via setTraceId', async () => {
-      const trace = client.trace({ captureStackTrace: false })
+    it('should send FlushTrace with provided traceId when traceId is set via options', async () => {
+      const trace = client.trace({ traceId: 'frontend-trace-abc', captureStackTrace: false })
         .addAttribute('endpoint', '/api/swap')
         .addTag('backend');
+      trace.flush();
+      await flushMicrotasks();
+      await flushPromises();
+      const traceId = trace.getTraceId();
 
-      trace.setTraceId('frontend-trace-xyz');
-      const traceId = await trace.create();
-
-      expect(traceId).toBe('frontend-trace-xyz');
-      expect(mockApiGatewayClient.CreateTrace).not.toHaveBeenCalled();
-      expect((mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).UpdateTrace).toHaveBeenCalledTimes(1);
+      expect(traceId).toBe('frontend-trace-abc');
+      expect(mockApiGatewayClient.FlushTrace).toHaveBeenCalledTimes(1);
+      expect(mockApiGatewayClient.FlushTrace.mock.calls[0][0].traceId).toBe('frontend-trace-abc');
     });
 
-    it('should include attributes in the UpdateTrace request', async () => {
-      await client.trace({ traceId: 'trace-attrs', captureStackTrace: false })
+    it('should include attributes in the FlushTrace request', async () => {
+      client.trace({ traceId: 'trace-attrs', captureStackTrace: false })
         .addAttribute('user', '0xabc')
         .addAttribute('slippage', 25)
         .addAttributes({ env: 'production', region: 'us-east' })
-        .create();
+        .flush();
+      await flushMicrotasks();
+      await flushPromises();
 
-      const updateCall = (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).UpdateTrace.mock.calls[0][0];
+      const updateCall = (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).FlushTrace.mock.calls[0][0];
       expect(updateCall.traceId).toBe('trace-attrs');
       expect(updateCall.data?.attributes?.[0]?.attributes).toEqual({
         user: '0xabc',
@@ -1833,23 +2004,27 @@ describe('Client', () => {
       });
     });
 
-    it('should include tags in the UpdateTrace request', async () => {
-      await client.trace({ traceId: 'trace-tags', captureStackTrace: false })
+    it('should include tags in the FlushTrace request', async () => {
+      client.trace({ traceId: 'trace-tags', captureStackTrace: false })
         .addTag('backend')
         .addTags(['api', 'swap'])
-        .create();
+        .flush();
+      await flushMicrotasks();
+      await flushPromises();
 
-      const updateCall = (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).UpdateTrace.mock.calls[0][0];
+      const updateCall = (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).FlushTrace.mock.calls[0][0];
       expect(updateCall.data?.tags?.[0]?.tags).toEqual(['backend', 'api', 'swap']);
     });
 
-    it('should include events in the UpdateTrace request', async () => {
-      await client.trace({ traceId: 'trace-events', captureStackTrace: false })
+    it('should include events in the FlushTrace request', async () => {
+      client.trace({ traceId: 'trace-events', captureStackTrace: false })
         .addEvent('backend:received', 'request received')
         .addEvent('backend:processed', { duration: 150 })
-        .create();
+        .flush();
+      await flushMicrotasks();
+      await flushPromises();
 
-      const updateCall = (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).UpdateTrace.mock.calls[0][0];
+      const updateCall = (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).FlushTrace.mock.calls[0][0];
       expect(updateCall.data?.events).toHaveLength(2);
       expect(updateCall.data?.events?.[0]?.name).toBe('backend:received');
       expect(updateCall.data?.events?.[0]?.details).toBe('request received');
@@ -1857,12 +2032,14 @@ describe('Client', () => {
       expect(JSON.parse(updateCall.data?.events?.[1]?.details)).toEqual({ duration: 150 });
     });
 
-    it('should include txHashHints in the UpdateTrace request', async () => {
-      await client.trace({ traceId: 'trace-tx', captureStackTrace: false })
+    it('should include txHashHints in the FlushTrace request', async () => {
+      client.trace({ traceId: 'trace-tx', captureStackTrace: false })
         .addTxHint('0xhash123', 'ethereum', 'swap tx')
-        .create();
+        .flush();
+      await flushMicrotasks();
+      await flushPromises();
 
-      const updateCall = (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).UpdateTrace.mock.calls[0][0];
+      const updateCall = (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).FlushTrace.mock.calls[0][0];
       expect(updateCall.data?.txHashHints).toHaveLength(1);
       expect(updateCall.data?.txHashHints?.[0]?.txHash).toBe('0xhash123');
       expect(updateCall.data?.txHashHints?.[0]?.chain).toBe(Chain.CHAIN_ETHEREUM);
@@ -1870,16 +2047,18 @@ describe('Client', () => {
     });
 
     it('should include all data types in a complex resumed trace', async () => {
-      await client.trace({ traceId: 'trace-complex', captureStackTrace: false })
+      client.trace({ traceId: 'trace-complex', captureStackTrace: false })
         .addAttribute('user', '0xabc')
         .addTag('dex')
         .addEvent('started', 'swap initiated')
         .addTxHint('0xhash', 'polygon')
         .addTxInputData('0xa9059cbb')
-        .create();
+        .flush();
+      await flushMicrotasks();
+      await flushPromises();
 
-      expect(mockApiGatewayClient.CreateTrace).not.toHaveBeenCalled();
-      const updateCall = (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).UpdateTrace.mock.calls[0][0];
+      expect(mockApiGatewayClient.FlushTrace).toHaveBeenCalledTimes(1);
+      const updateCall = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
       expect(updateCall.traceId).toBe('trace-complex');
       expect(updateCall.data?.attributes?.[0]?.attributes).toEqual({ user: '0xabc' });
       expect(updateCall.data?.tags?.[0]?.tags).toEqual(['dex']);
@@ -1888,9 +2067,11 @@ describe('Client', () => {
       expect(updateCall.data?.txHashHints?.[0]?.chain).toBe(Chain.CHAIN_POLYGON);
     });
 
-    it('should start keep-alive after successful resumed create()', async () => {
+    it('should start keep-alive after successful flush()', async () => {
       const trace = client.trace({ traceId: 'trace-keepalive', captureStackTrace: false });
-      await trace.create();
+      trace.flush();
+      await flushMicrotasks();
+      await flushPromises();
 
       // Wait for keep-alive interval to fire
       jest.useFakeTimers();
@@ -1905,80 +2086,56 @@ describe('Client', () => {
       await trace.close();
     });
 
-    it('should return the pre-set traceId from getTraceId() before create()', () => {
+    it('should return the pre-set traceId from getTraceId() before flush()', () => {
       const trace = client.trace({ traceId: 'pre-set-id', captureStackTrace: false });
       expect(trace.getTraceId()).toBe('pre-set-id');
     });
 
-    it('should return the pre-set traceId from getTraceId() after setTraceId()', () => {
-      const trace = client.trace({ captureStackTrace: false });
-      expect(trace.getTraceId()).toBeNull();
-      trace.setTraceId('late-set-id');
-      expect(trace.getTraceId()).toBe('late-set-id');
-    });
-
-    it('should return undefined when resumed UpdateTrace fails', async () => {
-      (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).UpdateTrace =
+    it('should log error when FlushTrace fails for resumed trace', async () => {
+      (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).FlushTrace =
         jest.fn().mockRejectedValue(new Error('Network error'));
 
-      const traceId = await client.trace({
+      client.trace({
         traceId: 'fail-trace',
         captureStackTrace: false,
         maxRetries: 0,
-      }).create();
+      }).flush();
+      await flushMicrotasks();
+      await flushPromises();
 
-      expect(traceId).toBeUndefined();
       expect(mockConsoleError).toHaveBeenCalledWith(
-        '[MiradorTrace] UpdateTrace error after retries (resumed trace):',
+        '[MiradorTrace] FlushTrace error after retries:',
         expect.any(Error)
       );
     });
 
-    it('should retry UpdateTrace on failure for resumed traces', async () => {
+    it('should retry FlushTrace on failure for resumed traces', async () => {
       const updateMock = jest.fn()
         .mockRejectedValueOnce(new Error('Transient error'))
         .mockResolvedValueOnce(mockUpdateResponse);
 
-      (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).UpdateTrace = updateMock;
+      (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).FlushTrace = updateMock;
 
-      const traceId = await client.trace({
+      const trace = client.trace({
         traceId: 'retry-trace',
         captureStackTrace: false,
         maxRetries: 1,
         retryBackoff: 1, // 1ms for fast tests
-      }).create();
+      });
+      trace.flush();
+      // Wait long enough for the retry backoff (1ms) + promise resolution
+      await new Promise(r => setTimeout(r, 50));
+      const traceId = trace.getTraceId();
 
       expect(traceId).toBe('retry-trace');
       expect(updateMock).toHaveBeenCalledTimes(2);
     });
 
-    it('should ignore setTraceId on a closed trace', async () => {
-      const mockCreateResponse: apiGateway.CreateTraceResponse = {
-        status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
-        traceId: 'original-id',
-      };
-      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockCreateResponse);
-
-      const trace = client.trace({ captureStackTrace: false });
-      await trace.create();
-      await trace.close();
-
-      trace.setTraceId('should-be-ignored');
-      expect(trace.getTraceId()).toBe('original-id');
-      expect(mockConsoleWarn).toHaveBeenCalledWith(
-        '[MiradorTrace] Trace is closed, ignoring setTraceId'
-      );
-    });
-
-    it('should return this from setTraceId for chaining', () => {
-      const trace = client.trace({ captureStackTrace: false });
-      const result = trace.setTraceId('chain-test');
-      expect(result).toBe(trace);
-    });
-
     it('should close a resumed trace correctly', async () => {
       const trace = client.trace({ traceId: 'close-test', captureStackTrace: false });
-      await trace.create();
+      trace.flush();
+      await flushMicrotasks();
+      await flushPromises();
       await trace.close('done');
 
       expect(trace.isClosed()).toBe(true);
@@ -1987,50 +2144,12 @@ describe('Client', () => {
       );
     });
 
-    it('should return undefined when create() is called on a closed resumed trace', async () => {
-      const trace = client.trace({ traceId: 'closed-resumed', captureStackTrace: false });
-      await trace.close();
-
-      const result = await trace.create();
-      expect(result).toBeUndefined();
-      expect(mockConsoleWarn).toHaveBeenCalledWith('[MiradorTrace] Trace is closed, cannot create');
-    });
-
-    it('should ignore setTraceId if trace ID is already set via options', async () => {
-      const trace = client.trace({ traceId: 'first-id', captureStackTrace: false });
-      expect(trace.getTraceId()).toBe('first-id');
-
-      trace.setTraceId('second-id');
-      expect(trace.getTraceId()).toBe('first-id');
-      expect(mockConsoleWarn).toHaveBeenCalledWith('[MiradorTrace] Trace ID is already set, ignoring setTraceId');
-
-      await trace.create();
-
-      const updateCall = (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).UpdateTrace.mock.calls[0][0];
-      expect(updateCall.traceId).toBe('first-id');
-    });
-
-    it('should ignore setTraceId if trace ID is already set via create()', async () => {
-      mockApiGatewayClient.UpdateTrace.mockResolvedValue({
-        status: {
-          code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
-          errorMessage: undefined,
-        },
-      });
-
-      const trace = client.trace({ captureStackTrace: false });
-      trace.setTraceId('server-id');
-      expect(trace.getTraceId()).toBe('server-id');
-
-      trace.setTraceId('override-id');
-      expect(trace.getTraceId()).toBe('server-id');
-      expect(mockConsoleWarn).toHaveBeenCalledWith('[MiradorTrace] Trace ID is already set, ignoring setTraceId');
-    });
-
     it('should send empty data arrays when no data is added to resumed trace', async () => {
-      await client.trace({ traceId: 'empty-data', captureStackTrace: false }).create();
+      client.trace({ traceId: 'empty-data', captureStackTrace: false }).flush();
+      await flushMicrotasks();
+      await flushPromises();
 
-      const updateCall = (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).UpdateTrace.mock.calls[0][0];
+      const updateCall = (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).FlushTrace.mock.calls[0][0];
       expect(updateCall.traceId).toBe('empty-data');
       expect(updateCall.data?.attributes).toEqual([]);
       expect(updateCall.data?.tags).toEqual([]);
@@ -2038,12 +2157,14 @@ describe('Client', () => {
       expect(updateCall.data?.txHashHints).toEqual([]);
     });
 
-    it('should include sendClientTimestamp in the UpdateTrace request', async () => {
+    it('should include sendClientTimestamp in the FlushTrace request', async () => {
       const before = new Date();
-      await client.trace({ traceId: 'timestamp-test', captureStackTrace: false }).create();
+      client.trace({ traceId: 'timestamp-test', captureStackTrace: false }).flush();
+      await flushMicrotasks();
+      await flushPromises();
       const after = new Date();
 
-      const updateCall = (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).UpdateTrace.mock.calls[0][0];
+      const updateCall = (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).FlushTrace.mock.calls[0][0];
       expect(updateCall.sendClientTimestamp).toBeDefined();
       expect(updateCall.sendClientTimestamp!.getTime()).toBeGreaterThanOrEqual(before.getTime());
       expect(updateCall.sendClientTimestamp!.getTime()).toBeLessThanOrEqual(after.getTime());
@@ -2051,12 +2172,13 @@ describe('Client', () => {
   });
 
   describe('standard trace (no traceId)', () => {
-    const mockCreateResponse: apiGateway.CreateTraceResponse = {
+    const mockCreateResponse: apiGateway.FlushTraceResponse = {
       status: {
         code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
         errorMessage: undefined,
       },
       traceId: 'server-assigned-id',
+      created: true,
     };
 
     const mockKeepAliveResponse: apiGateway.KeepAliveResponse = {
@@ -2068,61 +2190,61 @@ describe('Client', () => {
     };
 
     beforeEach(() => {
-      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockCreateResponse);
-      (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).UpdateTrace =
-        jest.fn();
+      mockApiGatewayClient.FlushTrace.mockResolvedValue(mockCreateResponse);
       (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).KeepAlive =
         jest.fn().mockResolvedValue(mockKeepAliveResponse);
       (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).CloseTrace =
         jest.fn().mockResolvedValue(mockCloseResponse);
     });
 
-    it('should send CreateTrace when no traceId is provided', async () => {
-      const traceId = await client.trace({ name: 'standard', captureStackTrace: false })
-        .addAttribute('key', 'value')
-        .create();
+    it('should send FlushTrace when no traceId is provided', async () => {
+      const trace = client.trace({ name: 'standard', captureStackTrace: false })
+        .addAttribute('key', 'value');
+      trace.flush();
+      await flushMicrotasks();
+      await flushPromises();
+      const traceId = trace.getTraceId();
 
-      expect(traceId).toBe('server-assigned-id');
-      expect(mockApiGatewayClient.CreateTrace).toHaveBeenCalledTimes(1);
-      expect((mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).UpdateTrace).not.toHaveBeenCalled();
+      expect(traceId).toHaveLength(32); // auto-generated W3C trace ID
+      expect(mockApiGatewayClient.FlushTrace).toHaveBeenCalledTimes(1);
     });
 
-    it('should send CreateTrace when traceId option is undefined', async () => {
-      const traceId = await client.trace({ name: 'explicit-undefined', traceId: undefined, captureStackTrace: false })
-        .create();
+    it('should send FlushTrace when traceId option is undefined', async () => {
+      const trace = client.trace({ name: 'explicit-undefined', traceId: undefined, captureStackTrace: false });
+      trace.flush();
+      await flushMicrotasks();
+      await flushPromises();
+      const traceId = trace.getTraceId();
 
-      expect(traceId).toBe('server-assigned-id');
-      expect(mockApiGatewayClient.CreateTrace).toHaveBeenCalledTimes(1);
-      expect((mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).UpdateTrace).not.toHaveBeenCalled();
+      expect(traceId).toHaveLength(32); // auto-generated W3C trace ID
+      expect(mockApiGatewayClient.FlushTrace).toHaveBeenCalledTimes(1);
     });
 
-    it('should have null traceId before create() when no traceId option', () => {
+    it('should have auto-generated traceId immediately (no traceId option)', () => {
       const trace = client.trace({ captureStackTrace: false });
-      expect(trace.getTraceId()).toBeNull();
+      expect(trace.getTraceId()).toHaveLength(32); // auto-generated W3C trace ID
     });
 
-    it('should have server-assigned traceId after create()', async () => {
-      const trace = client.trace({ captureStackTrace: false });
-      await trace.create();
-      expect(trace.getTraceId()).toBe('server-assigned-id');
-    });
+    it('should include name in FlushTrace request', async () => {
+      client.trace({ name: 'my-trace', captureStackTrace: false }).flush();
+      await flushMicrotasks();
+      await flushPromises();
 
-    it('should include name in CreateTrace request', async () => {
-      await client.trace({ name: 'my-trace', captureStackTrace: false }).create();
-
-      const createCall = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      const createCall = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
       expect(createCall.name).toBe('my-trace');
     });
 
-    it('should include all data in CreateTrace request', async () => {
-      await client.trace({ name: 'full-trace', captureStackTrace: false })
+    it('should include all data in FlushTrace request', async () => {
+      client.trace({ name: 'full-trace', captureStackTrace: false })
         .addAttribute('user', '0xabc')
         .addTag('dex')
         .addEvent('started', 'details')
         .addTxHint('0xhash', 'ethereum')
-        .create();
+        .flush();
+      await flushMicrotasks();
+      await flushPromises();
 
-      const createCall = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      const createCall = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
       expect(createCall.data?.attributes?.[0]?.attributes).toEqual({ user: '0xabc' });
       expect(createCall.data?.tags?.[0]?.tags).toEqual(['dex']);
       expect(createCall.data?.events?.[0]?.name).toBe('started');
@@ -2131,12 +2253,15 @@ describe('Client', () => {
 
     it('should close a standard trace correctly', async () => {
       const trace = client.trace({ captureStackTrace: false });
-      await trace.create();
+      const traceId = trace.getTraceId();
+      trace.flush();
+      await flushMicrotasks();
+      await flushPromises();
       await trace.close('finished');
 
       expect(trace.isClosed()).toBe(true);
       expect((mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).CloseTrace).toHaveBeenCalledWith(
-        expect.objectContaining({ traceId: 'server-assigned-id', text: 'finished' })
+        expect.objectContaining({ traceId, text: 'finished' })
       );
     });
   });
@@ -2171,8 +2296,8 @@ describe('Client', () => {
       await jest.advanceTimersByTimeAsync(0);
 
       // Verify the update was sent
-      expect(mockApiGatewayClient.UpdateTrace).toHaveBeenCalledTimes(1);
-      const request = mockApiGatewayClient.UpdateTrace.mock.calls[0][0];
+      expect(mockApiGatewayClient.FlushTrace).toHaveBeenCalledTimes(1);
+      const request = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
       expect(request.traceId).toBe('frontend-trace-abc');
 
       // Let 60 seconds pass — no zombie keepalive should fire
@@ -2207,7 +2332,7 @@ describe('Client', () => {
       await jest.advanceTimersByTimeAsync(0);
 
       // Three updates sent, zero keepalives
-      expect(mockApiGatewayClient.UpdateTrace).toHaveBeenCalledTimes(3);
+      expect(mockApiGatewayClient.FlushTrace).toHaveBeenCalledTimes(3);
       expect(mockApiGatewayClient.KeepAlive).not.toHaveBeenCalled();
 
       // Wait a long time — still no keepalive
@@ -2219,13 +2344,15 @@ describe('Client', () => {
     });
 
     it('owner trace keeps keepalive running while non-owner does not', async () => {
-      mockApiGatewayClient.CreateTrace.mockResolvedValue({
+      mockApiGatewayClient.FlushTrace.mockResolvedValue({
         status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
         traceId: 'owner-created-id',
+        created: true,
       });
 
       // Owner creates the trace
       const ownerTrace = client.trace({ name: 'UserSwap', captureStackTrace: false });
+      const ownerTraceId = ownerTrace.getTraceId();
       ownerTrace.addAttribute('wallet', '0xabc');
       ownerTrace.flush();
       await jest.advanceTimersByTimeAsync(15000);
@@ -2235,7 +2362,7 @@ describe('Client', () => {
 
       // Non-owner resumes the same trace
       const nonOwnerTrace = client.trace({
-        traceId: 'owner-created-id',
+        traceId: ownerTraceId,
         captureStackTrace: false,
       });
       nonOwnerTrace.addEvent('backend:enriched');
@@ -2247,7 +2374,7 @@ describe('Client', () => {
 
       // All keepalive calls should be from the owner (traceId matches)
       for (const call of mockApiGatewayClient.KeepAlive.mock.calls) {
-        expect(call[0].traceId).toBe('owner-created-id');
+        expect(call[0].traceId).toBe(ownerTraceId);
       }
       // Owner keepalive is still ticking
       expect(mockApiGatewayClient.KeepAlive.mock.calls.length).toBeGreaterThan(0);
@@ -2292,9 +2419,10 @@ describe('Client', () => {
     });
 
     it('should start keep-alive for new traces (default behavior)', async () => {
-      mockApiGatewayClient.CreateTrace.mockResolvedValue({
+      mockApiGatewayClient.FlushTrace.mockResolvedValue({
         status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
         traceId: 'new-trace-id',
+      created: true,
       });
 
       const trace = client.trace({ captureStackTrace: false });
@@ -2317,9 +2445,10 @@ describe('Client', () => {
     });
 
     it('should NOT start keep-alive when autoKeepAlive: false suppresses it for new trace', async () => {
-      mockApiGatewayClient.CreateTrace.mockResolvedValue({
+      mockApiGatewayClient.FlushTrace.mockResolvedValue({
         status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
         traceId: 'new-trace-id',
+      created: true,
       });
 
       const trace = client.trace({ autoKeepAlive: false, captureStackTrace: false });
@@ -2346,9 +2475,10 @@ describe('Client', () => {
     });
 
     it('should allow manual stopKeepAlive() on a new trace', async () => {
-      mockApiGatewayClient.CreateTrace.mockResolvedValue({
+      mockApiGatewayClient.FlushTrace.mockResolvedValue({
         status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
         traceId: 'new-trace-id',
+      created: true,
       });
 
       const trace = client.trace({ captureStackTrace: false });
@@ -2366,37 +2496,36 @@ describe('Client', () => {
   });
 
   describe('flush()', () => {
-    const flushMicrotasks = () => new Promise<void>(resolve => queueMicrotask(resolve));
-    const flushPromises = () => new Promise<void>(resolve => setTimeout(resolve, 0));
-
     it('should auto-flush via microtask when builder methods are called', async () => {
-      const mockResponse: apiGateway.CreateTraceResponse = {
+      const mockResponse: apiGateway.FlushTraceResponse = {
         status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
         traceId: 'auto-flush-id',
+      created: true,
       };
-      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+      mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
 
       client.trace({ name: 'auto-flush', captureStackTrace: false })
         .addAttribute('key', 'value');
 
       // Not flushed yet (microtask hasn't run)
-      expect(mockApiGatewayClient.CreateTrace).not.toHaveBeenCalled();
+      expect(mockApiGatewayClient.FlushTrace).not.toHaveBeenCalled();
 
       // Flush the microtask + promise queues
       await flushMicrotasks();
       await flushPromises();
 
-      expect(mockApiGatewayClient.CreateTrace).toHaveBeenCalledTimes(1);
-      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      expect(mockApiGatewayClient.FlushTrace).toHaveBeenCalledTimes(1);
+      const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
       expect(calls.data?.attributes?.[0]?.attributes).toEqual({ key: 'value' });
     });
 
     it('should batch multiple builder calls in the same tick into a single flush', async () => {
-      const mockResponse: apiGateway.CreateTraceResponse = {
+      const mockResponse: apiGateway.FlushTraceResponse = {
         status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
         traceId: 'batch-flush-id',
+      created: true,
       };
-      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
+      mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
 
       client.trace({ name: 'batch', captureStackTrace: false })
         .addAttribute('a', '1')
@@ -2407,57 +2536,50 @@ describe('Client', () => {
       await flushMicrotasks();
       await flushPromises();
 
-      // All data should be in a single CreateTrace call
-      expect(mockApiGatewayClient.CreateTrace).toHaveBeenCalledTimes(1);
-      const calls = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
+      // All data should be in a single FlushTrace call
+      expect(mockApiGatewayClient.FlushTrace).toHaveBeenCalledTimes(1);
+      const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
       expect(calls.data?.attributes?.[0]?.attributes).toEqual({ a: '1', b: '2' });
       expect(calls.data?.tags?.[0]?.tags).toEqual(['tag1']);
       expect(calls.data?.events).toHaveLength(1);
     });
 
-    it('should send UpdateTrace on subsequent flushes after trace is created', async () => {
-      const mockCreateResponse: apiGateway.CreateTraceResponse = {
+    it('should send FlushTrace on subsequent flushes after trace is created', async () => {
+      const mockFlushResponse: apiGateway.FlushTraceResponse = {
         status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
-        traceId: 'update-flush-id',
+        traceId: '',
+        created: true,
       };
-      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockCreateResponse);
-
-      const mockUpdateResponse: apiGateway.UpdateTraceResponse = {
-        status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
-      };
-      (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).UpdateTrace = jest.fn().mockResolvedValue(mockUpdateResponse);
+      mockApiGatewayClient.FlushTrace.mockResolvedValue(mockFlushResponse);
 
       const trace = client.trace({ name: 'update-test', captureStackTrace: false });
+      const traceId = trace.getTraceId();
       trace.addAttribute('initial', 'data');
 
-      // First flush → CreateTrace
+      // First flush → FlushTrace
       await flushMicrotasks();
       await flushPromises();
-      expect(mockApiGatewayClient.CreateTrace).toHaveBeenCalledTimes(1);
+      expect(mockApiGatewayClient.FlushTrace).toHaveBeenCalledTimes(1);
 
-      // Add more data → should trigger UpdateTrace
+      // Add more data → should trigger another FlushTrace
       trace.addEvent('step2');
       await flushMicrotasks();
       await flushPromises();
 
-      expect((mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).UpdateTrace).toHaveBeenCalledTimes(1);
-      const updateCall = (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).UpdateTrace.mock.calls[0][0];
-      expect(updateCall.traceId).toBe('update-flush-id');
-      expect(updateCall.data?.events).toHaveLength(1);
-      expect(updateCall.data?.events?.[0]?.name).toBe('step2');
+      expect(mockApiGatewayClient.FlushTrace).toHaveBeenCalledTimes(2);
+      const secondCall = mockApiGatewayClient.FlushTrace.mock.calls[1][0];
+      expect(secondCall.traceId).toBe(traceId);
+      expect(secondCall.data?.events).toHaveLength(1);
+      expect(secondCall.data?.events?.[0]?.name).toBe('step2');
     });
 
     it('should clear pending data after flush so subsequent flushes do not re-send', async () => {
-      const mockCreateResponse: apiGateway.CreateTraceResponse = {
+      const mockCreateResponse: apiGateway.FlushTraceResponse = {
         status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
         traceId: 'clear-pending-id',
+      created: true,
       };
-      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockCreateResponse);
-
-      const mockUpdateResponse: apiGateway.UpdateTraceResponse = {
-        status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
-      };
-      (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).UpdateTrace = jest.fn().mockResolvedValue(mockUpdateResponse);
+      mockApiGatewayClient.FlushTrace.mockResolvedValue(mockCreateResponse);
 
       const trace = client.trace({ name: 'clear-test', captureStackTrace: false });
       trace.addAttribute('first', 'value');
@@ -2470,30 +2592,34 @@ describe('Client', () => {
       await flushMicrotasks();
       await flushPromises();
 
-      const updateCall = (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).UpdateTrace.mock.calls[0][0];
+      expect(mockApiGatewayClient.FlushTrace).toHaveBeenCalledTimes(2);
+      const secondCall = mockApiGatewayClient.FlushTrace.mock.calls[1][0];
       // Should only have 'second', not 'first'
-      expect(updateCall.data?.attributes?.[0]?.attributes).toEqual({ second: 'value' });
+      expect(secondCall.data?.attributes?.[0]?.attributes).toEqual({ second: 'value' });
     });
 
     it('should ignore flush on a closed trace', async () => {
-      const mockCreateResponse: apiGateway.CreateTraceResponse = {
+      const mockCreateResponse: apiGateway.FlushTraceResponse = {
         status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
         traceId: 'closed-flush-id',
+      created: true,
       };
-      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockCreateResponse);
+      mockApiGatewayClient.FlushTrace.mockResolvedValue(mockCreateResponse);
       (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).CloseTrace = jest.fn().mockResolvedValue({ accepted: true });
 
       const trace = client.trace({ name: 'close-test', captureStackTrace: false });
-      await trace.create();
+      trace.flush();
+      await flushMicrotasks();
+      await flushPromises();
       await trace.close();
 
-      mockApiGatewayClient.CreateTrace.mockClear();
+      mockApiGatewayClient.FlushTrace.mockClear();
       trace.flush();
 
       await flushMicrotasks();
       await flushPromises();
 
-      expect(mockApiGatewayClient.CreateTrace).not.toHaveBeenCalled();
+      expect(mockApiGatewayClient.FlushTrace).not.toHaveBeenCalled();
       expect(mockConsoleWarn).toHaveBeenCalledWith('[MiradorTrace] Trace is closed. Ignoring flush call.');
     });
 
@@ -2504,55 +2630,38 @@ describe('Client', () => {
       expect(result).toBeUndefined();
     });
 
-    it('create() should remain backward compatible by calling flush and awaiting', async () => {
-      const mockResponse: apiGateway.CreateTraceResponse = {
-        status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
-        traceId: 'create-compat-id',
-      };
-      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockResponse);
-
-      const traceId = await client.trace({ name: 'compat', captureStackTrace: false })
-        .addAttribute('user', 'alice')
-        .create();
-
-      expect(traceId).toBe('create-compat-id');
-      expect(mockApiGatewayClient.CreateTrace).toHaveBeenCalledTimes(1);
-    });
-
     it('close() should drain flush queue before sending CloseTrace', async () => {
-      const mockCreateResponse: apiGateway.CreateTraceResponse = {
+      const mockFlushResponse: apiGateway.FlushTraceResponse = {
         status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
-        traceId: 'drain-close-id',
+        traceId: '',
+        created: true,
       };
-      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockCreateResponse);
+      mockApiGatewayClient.FlushTrace.mockResolvedValue(mockFlushResponse);
       (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).CloseTrace = jest.fn().mockResolvedValue({ accepted: true });
 
       const trace = client.trace({ name: 'drain-test', captureStackTrace: false });
+      const traceId = trace.getTraceId();
       trace.addAttribute('key', 'value');
       // flush is auto-scheduled but not yet executed
 
       // close() should await the pending flush before sending CloseTrace
       await trace.close('done');
 
-      // CreateTrace should have been called (flush drained)
-      expect(mockApiGatewayClient.CreateTrace).toHaveBeenCalledTimes(1);
+      // FlushTrace should have been called (flush drained)
+      expect(mockApiGatewayClient.FlushTrace).toHaveBeenCalledTimes(1);
       // CloseTrace should have been called after
       expect((mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).CloseTrace).toHaveBeenCalledWith(
-        expect.objectContaining({ traceId: 'drain-close-id', text: 'done' })
+        expect.objectContaining({ traceId, text: 'done' })
       );
     });
 
     it('should include stack trace attributes only on first flush', async () => {
-      const mockCreateResponse: apiGateway.CreateTraceResponse = {
+      const mockFlushResponse: apiGateway.FlushTraceResponse = {
         status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
-        traceId: 'stack-first-flush-id',
+        traceId: '',
+        created: true,
       };
-      mockApiGatewayClient.CreateTrace.mockResolvedValue(mockCreateResponse);
-
-      const mockUpdateResponse: apiGateway.UpdateTraceResponse = {
-        status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
-      };
-      (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).UpdateTrace = jest.fn().mockResolvedValue(mockUpdateResponse);
+      mockApiGatewayClient.FlushTrace.mockResolvedValue(mockFlushResponse);
 
       const trace = client.trace({ name: 'stack-test', captureStackTrace: true });
       trace.addTag('first');
@@ -2561,8 +2670,8 @@ describe('Client', () => {
       await flushPromises();
 
       // First flush should have source.* attributes
-      const createCall = mockApiGatewayClient.CreateTrace.mock.calls[0][0];
-      const attrs = createCall.data?.attributes?.[0]?.attributes;
+      const firstCall = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
+      const attrs = firstCall.data?.attributes?.[0]?.attributes;
       expect(attrs?.['source.stack_trace']).toBeDefined();
 
       // Second flush should NOT have source.* attributes
@@ -2570,8 +2679,9 @@ describe('Client', () => {
       await flushMicrotasks();
       await flushPromises();
 
-      const updateCall = (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).UpdateTrace.mock.calls[0][0];
-      expect(updateCall.data?.attributes).toEqual([]);
+      expect(mockApiGatewayClient.FlushTrace).toHaveBeenCalledTimes(2);
+      const secondCall = mockApiGatewayClient.FlushTrace.mock.calls[1][0];
+      expect(secondCall.data?.attributes).toEqual([]);
     });
   });
 });
@@ -2614,9 +2724,10 @@ describe('MiradorProvider', () => {
     mockClient = new Client('test-api-key');
 
     mockApiGatewayClient = {
-      CreateTrace: jest.fn().mockResolvedValue({
+      FlushTrace: jest.fn().mockResolvedValue({
         status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
         traceId: 'trace-provider-123',
+        created: true,
       }),
     } as unknown as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>;
 
@@ -2694,8 +2805,8 @@ describe('MiradorProvider', () => {
     const result = await provider.request({ method: 'eth_call', params: [{ to: '0xcontract', data: '0xdeadbeef' }] });
     expect(result).toBeNull();
     expect(mockUnderlying.request).toHaveBeenCalledWith({ method: 'eth_call', params: [{ to: '0xcontract', data: '0xdeadbeef' }] });
-    // Should not trigger CreateTrace since it's a pass-through
-    expect(mockApiGatewayClient.CreateTrace).not.toHaveBeenCalled();
+    // Should not trigger FlushTrace since it's a pass-through
+    expect(mockApiGatewayClient.FlushTrace).not.toHaveBeenCalled();
   });
 
   it('should NOT intercept eth_getBalance', async () => {
@@ -2703,7 +2814,7 @@ describe('MiradorProvider', () => {
     const result = await provider.request({ method: 'eth_getBalance', params: ['0xaddr', 'latest'] });
     expect(result).toBeNull();
     expect(mockUnderlying.request).toHaveBeenCalledWith({ method: 'eth_getBalance', params: ['0xaddr', 'latest'] });
-    expect(mockApiGatewayClient.CreateTrace).not.toHaveBeenCalled();
+    expect(mockApiGatewayClient.FlushTrace).not.toHaveBeenCalled();
   });
 
   it('should NOT intercept eth_estimateGas', async () => {
@@ -2711,7 +2822,7 @@ describe('MiradorProvider', () => {
     const result = await provider.request({ method: 'eth_estimateGas', params: [{ from: '0x1', to: '0x2' }] });
     expect(result).toBeNull();
     expect(mockUnderlying.request).toHaveBeenCalledWith({ method: 'eth_estimateGas', params: [{ from: '0x1', to: '0x2' }] });
-    expect(mockApiGatewayClient.CreateTrace).not.toHaveBeenCalled();
+    expect(mockApiGatewayClient.FlushTrace).not.toHaveBeenCalled();
   });
 
   it('should reuse bound trace across multiple sends', async () => {

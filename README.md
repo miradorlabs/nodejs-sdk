@@ -314,7 +314,7 @@ Returns: `this` for chaining
 
 Send pending data to the gateway. Fire-and-forget — returns immediately but maintains strict ordering internally.
 
-The first flush sends `CreateTrace`, subsequent flushes send `UpdateTrace`.
+Each flush sends `FlushTrace` (an idempotent create-or-update RPC).
 
 ```typescript
 trace.addEvent('important_milestone');
@@ -325,46 +325,15 @@ Returns: `void`
 
 > **Note:** Builder methods automatically call `flush()` via microtask scheduling, so you rarely need to call it manually. All synchronous builder calls within the same JS tick are batched into a single flush.
 
-#### `create()` *(deprecated)*
-
-> **Deprecated:** Use `flush()` or rely on auto-flush instead. Kept for backward compatibility.
-
-Submit the trace to the gateway synchronously and return the trace ID. Keep-alive timer starts automatically after successful creation.
-
-```typescript
-const traceId = await trace.create();
-```
-
-Returns: `Promise<string | undefined>` - The trace ID if successful, undefined if failed
-
 #### `getTraceId()`
 
-Get the trace ID (available after first flush completes successfully, or immediately if using `traceId` option / `setTraceId()`).
+Get the trace ID. Available immediately — trace IDs are generated client-side (W3C-compatible, 32 hex chars).
 
 ```typescript
-const traceId = trace.getTraceId();  // string | null
+const traceId = trace.getTraceId();  // string (always available)
 ```
 
-Returns: `string | null`
-
-#### `setTraceId(traceId)`
-
-Set the trace ID on an existing trace instance, allowing it to resume a trace created elsewhere (e.g., passed from a frontend SDK via HTTP header). Subsequent flushes will send `UpdateTrace` instead of `CreateTrace`.
-
-```typescript
-trace.setTraceId('abc-123-def');
-```
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `traceId` | `string` | The trace ID to resume |
-
-Returns: `this` for chaining
-
-**Notes:**
-- Ignored if the trace is already closed (logs a warning)
-- Ignored if a trace ID is already set (logs a warning)
-- Can also be set at creation time via `client.trace({ traceId: '...' })`
+Returns: `string`
 
 #### `close(reason?)`
 
@@ -417,12 +386,12 @@ async function trackSwapExecution(userAddress: string, txHash: string) {
     .addTags(['swap', 'dex', 'ethereum'])
     .addEvent('quote_requested')
     .addEvent('quote_received', { price: 2500.50, provider: 'Uniswap' });
-  // → CreateTrace auto-flushed at end of current JS tick
+  // → FlushTrace auto-sent at end of current JS tick
 
   try {
     await processTransaction();
 
-    // Add more data — auto-flushed as UpdateTrace
+    // Add more data — auto-flushed via FlushTrace
     trace.addEvent('transaction_signed')
          .addEvent('transaction_confirmed', { blockNumber: 12345678 })
          .addTxHint(txHash, 'ethereum', 'Swap transaction');
