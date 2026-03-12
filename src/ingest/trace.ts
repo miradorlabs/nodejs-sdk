@@ -147,7 +147,7 @@ export class Trace {
 
   // Max trace lifetime
   private maxTraceLifetimeMs: number;
-  private traceCreatedAt: number = Date.now();
+  private lifetimeTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Queue size limit
   private maxQueueSize: number;
@@ -184,6 +184,13 @@ export class Trace {
     if (options.captureStackTrace) {
       // Skip 2 frames: this constructor and the trace() method that called it
       this.creationStackTrace = captureStackTrace(2);
+    }
+
+    // Dedicated lifetime timer — fires even when autoKeepAlive is false
+    if (this.maxTraceLifetimeMs > 0) {
+      this.lifetimeTimer = setTimeout(() => {
+        this.close('Max trace lifetime exceeded');
+      }, this.maxTraceLifetimeMs);
     }
   }
 
@@ -677,7 +684,9 @@ export class Trace {
       this.pendingSafeMsgHints = this.pendingSafeMsgHints.slice(safeMsgHintsToSend.length);
       this.pendingSafeTxHints = this.pendingSafeTxHints.slice(safeTxHintsToSend.length);
 
-      // Temporarily swap in the batch for buildTraceData
+      // Note: attributes and tags are consumed entirely by the first batch and won't
+      // appear alongside overflow events. This is acceptable because attributes/tags are
+      // additive metadata (merged server-side), not positional data like events/hints.
       const savedEvents = this.pendingEvents;
       const savedTxHints = this.pendingTxHashHints;
       const savedSafeMsgs = this.pendingSafeMsgHints;
@@ -949,11 +958,6 @@ export class Trace {
     }
 
     this.keepAliveTimer = setInterval(() => {
-      // Max trace lifetime safety net (0 = disabled)
-      if (this.maxTraceLifetimeMs > 0 && Date.now() - this.traceCreatedAt >= this.maxTraceLifetimeMs) {
-        this.close('Max trace lifetime exceeded');
-        return;
-      }
       this.sendKeepAlive();
     }, this.keepAliveIntervalMs);
   }
@@ -965,6 +969,10 @@ export class Trace {
     if (this.keepAliveTimer) {
       clearInterval(this.keepAliveTimer);
       this.keepAliveTimer = null;
+    }
+    if (this.lifetimeTimer) {
+      clearTimeout(this.lifetimeTimer);
+      this.lifetimeTimer = null;
     }
   }
 
@@ -1060,7 +1068,14 @@ export class Trace {
     }
 
     // Wait for flush queue with a timeout to avoid indefinite hangs
-    await Promise.race([this.flushQueue, this.sleep(5000)]);
+    let drainTimedOut = false;
+    await Promise.race([
+      this.flushQueue,
+      this.sleep(5000).then(() => { drainTimedOut = true; }),
+    ]);
+    if (drainTimedOut) {
+      this.client.logger.warn('[MiradorTrace] Flush queue drain timed out after 5s, some data may not have been sent');
+    }
 
     // Send close request — retry once on failure
     if (this.traceId) {
