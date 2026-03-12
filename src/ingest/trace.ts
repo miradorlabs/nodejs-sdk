@@ -1138,6 +1138,7 @@ export class NoopTrace extends Trace {
   addTxInputData(): this { return this; }
   addTx(): this { return this; }
   setProvider(): this { return this; }
+  async sendTransaction(): Promise<string> { return ''; }
   flush(): void {}
   async close(): Promise<void> {}
   /** Sentinel trace ID — not a valid trace, used only for NoopTrace */

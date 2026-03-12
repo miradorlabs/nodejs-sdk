@@ -173,9 +173,9 @@ export interface TraceOptions {
   traceId?: string;
   /** Capture stack trace at trace creation point (default: true) */
   captureStackTrace?: boolean;
-  /** Maximum number of retry attempts on failure (default: 3) */
+  /** Maximum number of retry attempts on failure (default: 2) */
   maxRetries?: number;
-  /** Base delay in ms for exponential backoff between retries (default: 1000) */
+  /** Base delay in ms for exponential backoff between retries (default: 500) */
   retryBackoff?: number;
   /** EIP-1193 provider to use for transaction operations */
   provider?: EIP1193Provider;
