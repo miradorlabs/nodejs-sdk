@@ -25,9 +25,6 @@ describe('Client', () => {
     // Clear all mocks before each test
     jest.clearAllMocks();
 
-    // Create a new Client instance with debug logging so console spies capture output
-    client = new Client("test-api-key", { debug: true });
-
     // Create mock for IngestGatewayServiceClientImpl with defaults
     // FlushTrace, CloseTrace, KeepAlive are needed because auto-flush (via scheduleFlush)
     // can trigger FlushTrace asynchronously during tests.
@@ -41,10 +38,14 @@ describe('Client', () => {
       KeepAlive: jest.fn().mockResolvedValue({ accepted: true }),
     } as unknown as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>;
 
-    // Mock the IngestGatewayServiceClientImpl constructor
+    // Mock the IngestGatewayServiceClientImpl constructor — must be set up BEFORE
+    // creating the Client, since the client caches the gRPC client instance.
     jest
       .spyOn(apiGateway, "IngestGatewayServiceClientImpl")
       .mockImplementation(() => mockApiGatewayClient);
+
+    // Create a new Client instance with debug logging so console spies capture output
+    client = new Client("test-api-key", { debug: true });
   });
 
   afterEach(() => {

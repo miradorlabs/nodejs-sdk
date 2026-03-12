@@ -73,7 +73,7 @@ export interface TraceCallbacks {
  * Options for Client constructor
  */
 export interface ClientOptions {
-  /** Gateway URL (defaults to ingest-gateway-dev.mirador.org:443) */
+  /** Gateway URL (defaults to ingest.mirador.org:443) */
   apiUrl?: string;
   /** Keep-alive ping interval in milliseconds (default: 10000) */
   keepAliveIntervalMs?: number;

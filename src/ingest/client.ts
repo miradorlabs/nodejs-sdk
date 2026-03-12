@@ -53,6 +53,7 @@ export class Client {
   public keepAliveIntervalMs: number;
   private callTimeoutMs: number;
   private rpc: NodeGrpcRpc;
+  private grpcClient: IngestGatewayServiceClientImpl;
   private provider?: import('./types').EIP1193Provider;
 
   /** @internal */ readonly logger: Logger;
@@ -70,11 +71,14 @@ export class Client {
   constructor(apiKey?: string, options?: ClientOptions) {
     this.apiKey = apiKey;
     this.apiUrl = options?.apiUrl || DEFAULT_API_URL;
-    this.keepAliveIntervalMs = options?.keepAliveIntervalMs || DEFAULT_KEEP_ALIVE_INTERVAL_MS;
+    this.keepAliveIntervalMs = options?.keepAliveIntervalMs ?? DEFAULT_KEEP_ALIVE_INTERVAL_MS;
     this.callTimeoutMs = options?.callTimeoutMs ?? DEFAULT_CALL_TIMEOUT_MS;
     this.provider = options?.provider;
     this.callbacks = options?.callbacks;
     this.sampleRate = options?.sampleRate ?? 1;
+    if (this.sampleRate < 0 || this.sampleRate > 1) {
+      throw new Error('sampleRate must be between 0 and 1');
+    }
     this.sampler = options?.sampler;
 
     // Configure logger: custom > debug console > noop
@@ -87,6 +91,7 @@ export class Client {
     }
 
     this.rpc = new NodeGrpcRpc(this.apiUrl, apiKey, options?.useSsl ?? true);
+    this.grpcClient = new IngestGatewayServiceClientImpl(this.rpc);
   }
 
   /**
@@ -94,8 +99,7 @@ export class Client {
    * @internal
    */
   async _flushTrace(request: FlushTraceRequest): Promise<FlushTraceResponse> {
-    const client = new IngestGatewayServiceClientImpl(this.rpc);
-    return await client.FlushTrace(request);
+    return await this.grpcClient.FlushTrace(request);
   }
 
   /**
@@ -103,8 +107,7 @@ export class Client {
    * @internal
    */
   async _keepAlive(request: KeepAliveRequest): Promise<KeepAliveResponse> {
-    const client = new IngestGatewayServiceClientImpl(this.rpc);
-    return await client.KeepAlive(request);
+    return await this.grpcClient.KeepAlive(request);
   }
 
   /**
@@ -112,8 +115,7 @@ export class Client {
    * @internal
    */
   async _closeTrace(request: CloseTraceRequest): Promise<CloseTraceResponse> {
-    const client = new IngestGatewayServiceClientImpl(this.rpc);
-    return await client.CloseTrace(request);
+    return await this.grpcClient.CloseTrace(request);
   }
 
   /**
