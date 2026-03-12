@@ -12,15 +12,25 @@ npm install @miradorlabs/nodejs-sdk
 
 - **Auto-Flush** - Builder methods automatically batch and send data via microtask scheduling
 - **Fluent Builder Pattern** - Method chaining for creating traces
-- **Retry with Backoff** - Automatic retry with exponential backoff on network failures
-- **Keep-Alive** - Automatic periodic pings to maintain trace liveness (configurable interval)
-- **Trace Lifecycle** - Explicit close trace method with automatic cleanup
+- **Keep-Alive** - Automatic periodic pings with in-flight guard, single retry, and auto-stop after 3 consecutive failures
+- **Trace Lifecycle** - Explicit close trace method with automatic cleanup and flush queue draining
 - **Blockchain Integration** - Built-in support for correlating traces with blockchain transactions
-- **Stack Trace Capture** - Automatic or manual capture of call stack for debugging
+- **Stack Trace Capture** - Automatic capture at trace creation (default: on) or manual capture via `addStackTrace()`
 - **TypeScript Support** - Full type definitions included
-- **Multiple Transaction Hints** - Support for multiple blockchain transaction correlations
+- **Strict Ordering** - Flush calls maintain strict ordering even when async
+- **Cross-SDK Trace Sharing** - Resume traces across frontend and backend SDKs
 - **Safe Multisig Tracking** - Track Safe message and transaction confirmations with `addSafeMsgHint()` and `addSafeTxHint()`
 - **EIP-1193 Provider Integration** - Send transactions directly through traces with `sendTransaction()`
+- **Configurable Logger** - Pluggable `Logger` interface (defaults to no-op; enable with `debug: true` or provide custom logger)
+- **Lifecycle Callbacks** - `TraceCallbacks` for observing flush success/failure, close, and dropped items
+- **Sampling** - `sampleRate` (0-1) or custom `sampler` function; sampled-out traces return `NoopTrace`
+- **Rate Limiting** - Automatic 30s client-wide backoff on `RESOURCE_EXHAUSTED` (gRPC code 8)
+- **Retry with Jitter** - Full jitter backoff (`random(0, base * 2^attempt)`) on retryable gRPC errors
+- **Queue Size Limits** - Configurable `maxQueueSize` (default 4096) with `onDropped` callback
+- **Flush Batch Splitting** - Large flushes automatically split at 100 items with overflow re-scheduling
+- **Trace Abandonment** - After retry exhaustion, trace stops all API calls to prevent runaway retries
+- **Max Trace Lifetime** - Optional `maxTraceLifetimeMs` to auto-close long-running traces
+- **Call Timeout** - Per-call `callTimeoutMs` (default 5000ms) wrapping all gRPC operations
 
 ## Quick Start
 
@@ -67,7 +77,13 @@ interface ClientOptions {
   apiUrl?: string;              // Gateway URL (defaults to ingest.mirador.org:443)
   keepAliveIntervalMs?: number; // Keep-alive ping interval in milliseconds (default: 10000)
   provider?: EIP1193Provider;   // EIP-1193 provider for transaction operations
-  useSsl?: boolean;             // Use SSL for gRPC connection (default: true)
+  useSsl?: boolean;             // Use SSL for gRPC connection (default: true, set false for local dev)
+  callTimeoutMs?: number;       // Per-call timeout for gRPC operations (default: 5000)
+  debug?: boolean;              // Enable debug logging via console (default: false)
+  logger?: Logger;              // Custom logger implementation (defaults to no-op)
+  callbacks?: TraceCallbacks;   // Default lifecycle callbacks for all traces
+  sampleRate?: number;          // Sample rate 0-1 (default: 1 = send all)
+  sampler?: (options: TraceOptions) => boolean; // Custom sampler (overrides sampleRate)
 }
 ```
 
@@ -83,32 +99,24 @@ const trace = client.trace();  // name is optional
 
 // Stack trace capture is enabled by default - to disable:
 const trace = client.trace({ name: 'MyTrace', captureStackTrace: false });
-
-// Configure retry behavior:
-const trace = client.trace({
-  name: 'MyTrace',
-  maxRetries: 5,      // Override default of 3
-  retryBackoff: 2000  // Override default of 1000ms
-});
 ```
 
-| Parameter | Type           | Required | Description           |
-|-----------|----------------|----------|-----------------------|
-| `options` | `TraceOptions` | No       | Trace configuration   |
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `name` | `string` | `undefined` | Optional name of the trace |
+| `traceId` | `string` | auto-generated | Resume an existing trace by ID, or auto-generated W3C trace ID (32 hex chars) |
+| `captureStackTrace` | `boolean` | `true` | Capture stack trace at trace creation point |
+| `maxRetries` | `number` | `2` | Maximum retry attempts on retryable gRPC errors |
+| `retryBackoff` | `number` | `500` | Base delay in ms for full jitter backoff |
+| `provider` | `EIP1193Provider` | `undefined` | EIP-1193 provider for transaction operations |
+| `autoKeepAlive` | `boolean` | `true`/`false` | Auto keep-alive (default: true for new, false when resuming) |
+| `maxTraceLifetimeMs` | `number` | `0` | Max trace lifetime in ms (0 = disabled). Auto-closes trace after this duration |
+| `maxQueueSize` | `number` | `4096` | Max pending items before dropping |
+| `callbacks` | `TraceCallbacks` | `undefined` | Per-trace lifecycle callbacks (overrides client-level) |
 
-```typescript
-interface TraceOptions {
-  name?: string;             // Trace name
-  traceId?: string;          // Resume an existing trace by ID
-  captureStackTrace?: boolean; // Capture stack trace at creation (default: true)
-  maxRetries?: number;       // Max retry attempts on failure (default: 3)
-  retryBackoff?: number;     // Base backoff delay in ms (default: 1000)
-  provider?: EIP1193Provider;  // EIP-1193 provider for transaction operations
-  autoKeepAlive?: boolean;   // Auto keep-alive (default: true for new, false when resuming)
-}
-```
+> **Note:** A W3C-compatible trace ID (32 hex chars) is automatically generated when you call `client.trace()`. If you pass `traceId`, the trace resumes an existing trace instead.
 
-Returns: `Trace` builder instance
+Returns: `Trace` builder instance (or `NoopTrace` if sampled out)
 
 ### Trace (Builder)
 
@@ -365,6 +373,74 @@ const closed = trace.isClosed();  // boolean
 
 Returns: `boolean`
 
+## Logger
+
+By default, the SDK silences all log output. Enable logging with `debug: true` for console output, or provide a custom `Logger`:
+
+```typescript
+// Debug mode - logs to console.debug/warn/error
+const client = new Client('key', { debug: true });
+
+// Custom logger (e.g., winston, pino)
+const client = new Client('key', {
+  logger: {
+    debug: (...args) => pino.debug(...args),
+    warn:  (...args) => pino.warn(...args),
+    error: (...args) => pino.error(...args),
+  },
+});
+```
+
+## Lifecycle Callbacks (TraceCallbacks)
+
+Observe trace lifecycle events programmatically:
+
+```typescript
+const client = new Client('key', {
+  callbacks: {
+    onFlushed:    (traceId, itemCount) => console.log(`Flushed ${itemCount} items`),
+    onFlushError: (error, operation)   => console.error(`${operation} failed:`, error),
+    onClosed:     (traceId, reason)    => console.log(`Trace closed: ${reason}`),
+    onDropped:    (count, reason)      => console.warn(`Dropped ${count} items: ${reason}`),
+  },
+});
+
+// Per-trace overrides
+const trace = client.trace({
+  name: 'ImportantFlow',
+  callbacks: { onFlushed: (id, n) => metrics.increment('flush', { id, n }) },
+});
+```
+
+## Sampling
+
+Control which traces are actually sent:
+
+```typescript
+// Fixed sample rate - send 10% of traces
+const client = new Client('key', { sampleRate: 0.1 });
+
+// Custom sampler - full control
+const client = new Client('key', {
+  sampler: (options) => {
+    // Always sample traces named "critical"
+    if (options.name === 'critical') return true;
+    return Math.random() < 0.1;
+  },
+});
+```
+
+When a trace is sampled out, `client.trace()` returns a `NoopTrace` - a zero-cost stub with the same API surface. All method calls are no-ops, and `getTraceId()` returns a sentinel value (`'0'.repeat(32)`).
+
+```typescript
+import { NoopTrace } from '@miradorlabs/nodejs-sdk';
+
+const trace = client.trace({ name: 'MaybeSampled' });
+if (trace instanceof NoopTrace) {
+  // This trace was sampled out - no network calls will be made
+}
+```
+
 ## Complete Example: Transaction Tracking
 
 ```typescript
@@ -593,7 +669,11 @@ import {
   // Classes
   Client,
   Trace,
+  NoopTrace,
   MiradorProvider,
+
+  // gRPC transport
+  NodeGrpcRpc,
 
   // Utilities
   captureStackTrace,
@@ -603,7 +683,7 @@ import {
 
   // Types
   ClientOptions,
-  TraceOptions,             // { name?, traceId?, captureStackTrace?, maxRetries?, retryBackoff?, provider?, autoKeepAlive? }
+  TraceOptions,             // { name?, traceId?, captureStackTrace?, maxRetries?, retryBackoff?, ... }
   AddEventOptions,          // { captureStackTrace?: boolean }
   StackFrame,               // { functionName, fileName, lineNumber, columnNumber }
   StackTrace,               // { frames: StackFrame[], raw: string }
@@ -617,6 +697,12 @@ import {
   TransactionLike,          // { hash, data?, input?, chainId? }
   TransactionRequest,       // { from, to?, data?, value?, ... }
   MiradorProviderOptions,   // { trace?, traceOptions? }
+  Logger,                   // { debug(), warn(), error() }
+  TraceCallbacks,           // { onFlushed?, onFlushError?, onClosed?, onDropped? }
+
+  // Advanced: raw proto types
+  FlushTraceRequest,
+  FlushTraceResponse,
 } from '@miradorlabs/nodejs-sdk';
 ```
 
