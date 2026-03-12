@@ -649,6 +649,10 @@ export class Trace {
         return;
       }
 
+      // Note: response.traceId is intentionally ignored. IDs are client-generated,
+      // so we don't expect the server to reassign them. If server-side deduplication
+      // or ID correction is ever needed, this is where to handle the reassigned ID.
+
       this.flushedOnce = true;
       if (this.autoKeepAlive) {
         this.startKeepAlive();
@@ -726,7 +730,7 @@ export class Trace {
    * Called automatically for new traces. Call manually to enable keepalive on resumed traces.
    */
   startKeepAlive(): void {
-    if (this.keepAliveTimer || !this.traceId || this.closed) {
+    if (this.keepAliveTimer || this.closed) {
       return;
     }
 
