@@ -14,7 +14,7 @@ import type {
 } from 'mirador-gateway-ingest/proto/gateway/ingest/v1/ingest_gateway';
 import { Chain } from 'mirador-gateway-ingest/proto/gateway/ingest/v1/ingest_gateway';
 import { ResponseStatus_StatusCode } from 'mirador-gateway-ingest/proto/gateway/common/v1/status';
-import type { ChainName, TraceEvent, TxHashHint, SafeMsgHintData, SafeTxHintData, AddEventOptions, StackTrace, EIP1193Provider, TxHintOptions, TransactionLike, TransactionRequest } from './types';
+import type { ChainName, TraceEvent, TxHashHint, SafeMsgHintData, SafeTxHintData, AddEventOptions, StackTrace, EIP1193Provider, TxHintOptions, TransactionLike, TransactionRequest, Logger, TraceCallbacks } from './types';
 import { captureStackTrace, formatStackTrace } from './stacktrace';
 import { chainIdToName } from './chains';
 
@@ -28,7 +28,22 @@ interface ResolvedTraceOptions {
   keepAliveIntervalMs: number;
   provider?: EIP1193Provider;
   autoKeepAlive: boolean;
+  callTimeoutMs: number;
+  maxTraceLifetimeMs: number;
+  maxQueueSize?: number;
+  callbacks?: TraceCallbacks;
 }
+
+/** gRPC status codes that are safe to retry */
+const RETRYABLE_GRPC_CODES = new Set([
+  4,  // DEADLINE_EXCEEDED
+  8,  // RESOURCE_EXHAUSTED (rate limited)
+  13, // INTERNAL
+  14, // UNAVAILABLE
+]);
+
+/** Default queue size limit */
+const DEFAULT_MAX_QUEUE_SIZE = 4096;
 
 /**
  * Serialize transaction params for EIP-1193, converting bigints to hex strings
@@ -82,6 +97,8 @@ export interface TraceSubmitter {
   _flushTrace(request: FlushTraceRequest): Promise<FlushTraceResponse>;
   _keepAlive(request: KeepAliveRequest): Promise<KeepAliveResponse>;
   _closeTrace(request: CloseTraceRequest): Promise<CloseTraceResponse>;
+  readonly logger: Logger;
+  rateLimitedUntil: number;
 }
 
 /**
@@ -118,6 +135,28 @@ export class Trace {
   // Retry configuration
   private maxRetries: number;
   private retryBackoff: number;
+  private callTimeoutMs: number;
+
+  // KeepAlive resilience
+  private keepAliveInFlight: boolean = false;
+  private keepAliveConsecutiveFailures: number = 0;
+  private static readonly MAX_KEEPALIVE_FAILURES = 3;
+
+  // Flush batch size limit
+  private static readonly MAX_FLUSH_BATCH_SIZE = 100;
+
+  // Max trace lifetime
+  private maxTraceLifetimeMs: number;
+  private traceCreatedAt: number = Date.now();
+
+  // Queue size limit
+  private maxQueueSize: number;
+
+  // Lifecycle callbacks
+  private callbacks?: TraceCallbacks;
+
+  // Trace abandonment
+  private abandoned: boolean = false;
 
   // Provider configuration
   private provider: EIP1193Provider | null = null;
@@ -131,6 +170,10 @@ export class Trace {
     this.keepAliveIntervalMs = options.keepAliveIntervalMs;
     this.maxRetries = options.maxRetries;
     this.retryBackoff = options.retryBackoff;
+    this.callTimeoutMs = options.callTimeoutMs;
+    this.maxTraceLifetimeMs = options.maxTraceLifetimeMs;
+    this.maxQueueSize = options.maxQueueSize ?? DEFAULT_MAX_QUEUE_SIZE;
+    this.callbacks = options.callbacks;
 
     if (options.provider) {
       this.setProvider(options.provider);
@@ -139,6 +182,47 @@ export class Trace {
     if (options.captureStackTrace) {
       // Skip 2 frames: this constructor and the trace() method that called it
       this.creationStackTrace = captureStackTrace(2);
+    }
+  }
+
+  /**
+   * Get current total pending items count
+   */
+  private get pendingCount(): number {
+    return Object.keys(this.pendingAttributes).length +
+      this.pendingTags.length +
+      this.pendingEvents.length +
+      this.pendingTxHashHints.length +
+      this.pendingSafeMsgHints.length +
+      this.pendingSafeTxHints.length;
+  }
+
+  /**
+   * Check if the queue is full and warn/invoke callback if so
+   */
+  private isQueueFull(itemCount: number = 1): boolean {
+    if (this.pendingCount + itemCount > this.maxQueueSize) {
+      this.client.logger.warn(`[MiradorTrace] Queue full (${this.maxQueueSize}), dropping ${itemCount} item(s)`);
+      this.invokeCallback('onDropped', itemCount, 'Queue full');
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Safely invoke a lifecycle callback, swallowing errors
+   */
+  private invokeCallback<K extends keyof TraceCallbacks>(
+    name: K,
+    ...args: Parameters<NonNullable<TraceCallbacks[K]>>
+  ): void {
+    const cb = this.callbacks?.[name];
+    if (cb) {
+      try {
+        (cb as (...a: unknown[]) => void)(...args);
+      } catch {
+        // Swallow callback errors
+      }
     }
   }
 
@@ -165,9 +249,10 @@ export class Trace {
    */
   addAttribute(key: string, value: string | number | boolean | object): this {
     if (this.closed) {
-      console.warn('[MiradorTrace] Trace is closed, ignoring addAttribute');
+      this.client.logger.warn('[MiradorTrace] Trace is closed, ignoring addAttribute');
       return this;
     }
+    if (this.isQueueFull()) return this;
     this.pendingAttributes[key] =
       typeof value === 'object' && value !== null
         ? JSON.stringify(value)
@@ -183,9 +268,10 @@ export class Trace {
    */
   addAttributes(attributes: { [key: string]: string | number | boolean | object }): this {
     if (this.closed) {
-      console.warn('[MiradorTrace] Trace is closed, ignoring addAttributes');
+      this.client.logger.warn('[MiradorTrace] Trace is closed, ignoring addAttributes');
       return this;
     }
+    if (this.isQueueFull(Object.keys(attributes).length)) return this;
     for (const [key, value] of Object.entries(attributes)) {
       this.pendingAttributes[key] =
         typeof value === 'object' && value !== null
@@ -203,9 +289,10 @@ export class Trace {
    */
   addTag(tag: string): this {
     if (this.closed) {
-      console.warn('[MiradorTrace] Trace is closed, ignoring addTag');
+      this.client.logger.warn('[MiradorTrace] Trace is closed, ignoring addTag');
       return this;
     }
+    if (this.isQueueFull()) return this;
     this.pendingTags.push(tag);
     this.scheduleFlush();
     return this;
@@ -218,9 +305,10 @@ export class Trace {
    */
   addTags(tags: string[]): this {
     if (this.closed) {
-      console.warn('[MiradorTrace] Trace is closed, ignoring addTags');
+      this.client.logger.warn('[MiradorTrace] Trace is closed, ignoring addTags');
       return this;
     }
+    if (this.isQueueFull(tags.length)) return this;
     this.pendingTags.push(...tags);
     this.scheduleFlush();
     return this;
@@ -235,9 +323,10 @@ export class Trace {
    */
   addEvent(eventName: string, details?: string | object, options?: AddEventOptions | Date): this {
     if (this.closed) {
-      console.warn('[MiradorTrace] Trace is closed, ignoring addEvent');
+      this.client.logger.warn('[MiradorTrace] Trace is closed, ignoring addEvent');
       return this;
     }
+    if (this.isQueueFull()) return this;
 
     // Handle backward compatibility: options can be a Date (legacy timestamp parameter)
     let timestamp: Date | undefined;
@@ -289,9 +378,10 @@ export class Trace {
    */
   addStackTrace(eventName: string = 'stack_trace', additionalDetails?: object): this {
     if (this.closed) {
-      console.warn('[MiradorTrace] Trace is closed. Ignoring addStackTrace call.');
+      this.client.logger.warn('[MiradorTrace] Trace is closed. Ignoring addStackTrace call.');
       return this;
     }
+    if (this.isQueueFull()) return this;
 
     const stackTrace = captureStackTrace(1); // Skip 1 frame (this method)
     const details = {
@@ -320,9 +410,10 @@ export class Trace {
    */
   addExistingStackTrace(stackTrace: StackTrace, eventName: string = 'stack_trace', additionalDetails?: object): this {
     if (this.closed) {
-      console.warn('[MiradorTrace] Trace is closed. Ignoring addExistingStackTrace call.');
+      this.client.logger.warn('[MiradorTrace] Trace is closed. Ignoring addExistingStackTrace call.');
       return this;
     }
+    if (this.isQueueFull()) return this;
 
     const details = {
       ...additionalDetails,
@@ -350,9 +441,10 @@ export class Trace {
    */
   addTxHint(txHash: string, chain: ChainName, options?: string | TxHintOptions): this {
     if (this.closed) {
-      console.warn('[MiradorTrace] Trace is closed, ignoring addTxHint');
+      this.client.logger.warn('[MiradorTrace] Trace is closed, ignoring addTxHint');
       return this;
     }
+    if (this.isQueueFull()) return this;
 
     let details: string | undefined;
     if (typeof options === 'string') {
@@ -383,9 +475,10 @@ export class Trace {
    */
   addSafeMsgHint(msgHint: string, chain: ChainName, details?: string): this {
     if (this.closed) {
-      console.warn('[MiradorTrace] Trace is closed, ignoring addSafeMsgHint');
+      this.client.logger.warn('[MiradorTrace] Trace is closed, ignoring addSafeMsgHint');
       return this;
     }
+    if (this.isQueueFull()) return this;
 
     this.pendingSafeMsgHints.push({
       messageHash: msgHint,
@@ -406,9 +499,10 @@ export class Trace {
    */
   addSafeTxHint(safeTxHash: string, chain: ChainName, details?: string): this {
     if (this.closed) {
-      console.warn('[MiradorTrace] Trace is closed, ignoring addSafeTxHint');
+      this.client.logger.warn('[MiradorTrace] Trace is closed, ignoring addSafeTxHint');
       return this;
     }
+    if (this.isQueueFull()) return this;
 
     this.pendingSafeTxHints.push({
       safeTxHash,
@@ -439,7 +533,7 @@ export class Trace {
    */
   addTx(tx: TransactionLike, chain?: ChainName): this {
     if (this.closed) {
-      console.warn('[MiradorTrace] Trace is closed, ignoring addTx');
+      this.client.logger.warn('[MiradorTrace] Trace is closed, ignoring addTx');
       return this;
     }
 
@@ -539,8 +633,7 @@ export class Trace {
    * Each flush sends FlushTrace (an idempotent create-or-update RPC).
    */
   flush(): void {
-    if (this.closed) {
-      console.warn('[MiradorTrace] Trace is closed. Ignoring flush call.');
+    if (this.closed || this.abandoned) {
       return;
     }
 
@@ -560,19 +653,94 @@ export class Trace {
       return; // Nothing to flush and trace already sent
     }
 
-    // Capture pending data NOW (before it changes)
-    const traceData = this.buildTraceData();
+    // Cap batch size: if too many items, keep extras pending for next flush
+    const totalItems = this.pendingEvents.length + this.pendingTxHashHints.length +
+      this.pendingSafeMsgHints.length + this.pendingSafeTxHints.length;
+    let overflow = false;
+
+    if (totalItems > Trace.MAX_FLUSH_BATCH_SIZE) {
+      overflow = true;
+      let budget = Trace.MAX_FLUSH_BATCH_SIZE;
+      const eventsToSend = this.pendingEvents.slice(0, budget);
+      budget -= eventsToSend.length;
+      const txHintsToSend = this.pendingTxHashHints.slice(0, budget);
+      budget -= txHintsToSend.length;
+      const safeMsgHintsToSend = this.pendingSafeMsgHints.slice(0, budget);
+      budget -= safeMsgHintsToSend.length;
+      const safeTxHintsToSend = this.pendingSafeTxHints.slice(0, budget);
+
+      // Keep the rest pending
+      this.pendingEvents = this.pendingEvents.slice(eventsToSend.length);
+      this.pendingTxHashHints = this.pendingTxHashHints.slice(txHintsToSend.length);
+      this.pendingSafeMsgHints = this.pendingSafeMsgHints.slice(safeMsgHintsToSend.length);
+      this.pendingSafeTxHints = this.pendingSafeTxHints.slice(safeTxHintsToSend.length);
+
+      // Temporarily swap in the batch for buildTraceData
+      const savedEvents = this.pendingEvents;
+      const savedTxHints = this.pendingTxHashHints;
+      const savedSafeMsgs = this.pendingSafeMsgHints;
+      const savedSafeTxs = this.pendingSafeTxHints;
+      this.pendingEvents = eventsToSend;
+      this.pendingTxHashHints = txHintsToSend;
+      this.pendingSafeMsgHints = safeMsgHintsToSend;
+      this.pendingSafeTxHints = safeTxHintsToSend;
+
+      const traceData = this.buildTraceData();
+      const itemCount = this.countItems(traceData);
+      this.pendingAttributes = {};
+      this.pendingTags = [];
+      this.pendingEvents = savedEvents;
+      this.pendingTxHashHints = savedTxHints;
+      this.pendingSafeMsgHints = savedSafeMsgs;
+      this.pendingSafeTxHints = savedSafeTxs;
+
+      this.enqueueFlush(traceData, itemCount);
+    } else {
+      const traceData = this.buildTraceData();
+      const itemCount = this.countItems(traceData);
+      this.clearPending();
+      this.enqueueFlush(traceData, itemCount);
+    }
+
+    if (overflow) {
+      this.scheduleFlush();
+    }
+  }
+
+  /**
+   * Count total items in a TraceData payload
+   */
+  private countItems(traceData: TraceData): number {
+    return (traceData.events?.length ?? 0) +
+      (traceData.txHashHints?.length ?? 0) +
+      (traceData.safeMsgHints?.length ?? 0) +
+      (traceData.safeTxHints?.length ?? 0) +
+      (traceData.attributes?.length ?? 0) +
+      (traceData.tags?.length ?? 0);
+  }
+
+  /**
+   * Enqueue a flush operation onto the flush queue for strict ordering.
+   */
+  private enqueueFlush(traceData: TraceData, itemCount: number): void {
     const traceName = this.name;
 
-    // Clear pending immediately so next flush doesn't re-send
-    this.clearPending();
-
-    // Chain onto the queue for strict ordering
     this.flushQueue = this.flushQueue.then(async () => {
-      await this.flushTrace(traceData);
+      if (this.abandoned) return;
+
+      // Rate limit check: if rate-limited, wait until the window passes
+      const now = Date.now();
+      if (this.client.rateLimitedUntil > now) {
+        const waitMs = this.client.rateLimitedUntil - now;
+        this.client.logger.warn(`[MiradorTrace] Rate limited, waiting ${waitMs}ms`);
+        await this.sleep(waitMs);
+      }
+
+      await this.flushTrace(traceData, itemCount);
     }).catch(err => {
       const context = traceName ? ` (trace: ${traceName})` : '';
-      console.error(`[MiradorTrace] Flush error during FlushTrace${context}:`, err);
+      this.client.logger.error(`[MiradorTrace] Flush error during FlushTrace${context}:`, err);
+      this.invokeCallback('onFlushError', err as Error, 'FlushTrace');
     });
   }
 
@@ -600,7 +768,32 @@ export class Trace {
   }
 
   /**
-   * Execute an operation with exponential backoff retry
+   * Race a promise against a timeout
+   */
+  private withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error(`Timeout after ${ms}ms`)), ms);
+      promise.then(
+        (val) => { clearTimeout(timer); resolve(val); },
+        (err) => { clearTimeout(timer); reject(err); },
+      );
+    });
+  }
+
+  /**
+   * Check if an error is retryable (network errors and specific gRPC status codes)
+   */
+  private isRetryableError(err: unknown): boolean {
+    if (err instanceof Error && err.message.startsWith('Timeout after ')) return true;
+    const code = (err as { code?: number }).code;
+    if (code !== undefined && RETRYABLE_GRPC_CODES.has(code)) return true;
+    return false;
+  }
+
+  /**
+   * Execute an operation with exponential backoff retry.
+   * Only retries on network errors and specific gRPC status codes.
+   * Uses full jitter to prevent thundering herd.
    */
   private async retryWithBackoff<T>(
     operation: () => Promise<T>,
@@ -610,14 +803,26 @@ export class Trace {
 
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
       try {
-        return await operation();
+        return await this.withTimeout(operation(), this.callTimeoutMs);
       } catch (err) {
         lastError = err as Error;
 
+        // Detect rate limiting (RESOURCE_EXHAUSTED) and set client-wide backoff
+        const code = (err as { code?: number }).code;
+        if (code === 8) {
+          this.client.rateLimitedUntil = Date.now() + 30_000;
+        }
+
+        if (!this.isRetryableError(err)) {
+          break;
+        }
+
         if (attempt < this.maxRetries) {
-          const delay = this.retryBackoff * Math.pow(2, attempt);
-          console.warn(
-            `[MiradorTrace] ${operationName} failed, retrying in ${delay}ms (attempt ${attempt + 1}/${this.maxRetries})`
+          // Full jitter: random(0, base * 2^attempt) to prevent thundering herd
+          const maxDelay = this.retryBackoff * Math.pow(2, attempt);
+          const delay = Math.random() * maxDelay;
+          this.client.logger.warn(
+            `[MiradorTrace] ${operationName} failed, retrying in ${Math.round(delay)}ms (attempt ${attempt + 1}/${this.maxRetries})`
           );
           await this.sleep(delay);
         }
@@ -630,7 +835,7 @@ export class Trace {
   /**
    * Send FlushTrace request (idempotent create-or-update)
    */
-  private async flushTrace(traceData: TraceData): Promise<void> {
+  private async flushTrace(traceData: TraceData, itemCount: number = 0): Promise<void> {
     const request: FlushTraceRequest = {
       traceId: this.traceId,
       name: this.name,
@@ -645,7 +850,7 @@ export class Trace {
       );
 
       if (response.status?.code !== ResponseStatus_StatusCode.STATUS_CODE_SUCCESS) {
-        console.error('[MiradorTrace] FlushTrace failed:', response.status?.errorMessage || 'Unknown error');
+        this.client.logger.error('[MiradorTrace] FlushTrace failed:', response.status?.errorMessage || 'Unknown error');
         return;
       }
 
@@ -654,17 +859,20 @@ export class Trace {
       // or ID correction is ever needed, this is where to handle the reassigned ID.
 
       this.flushedOnce = true;
+      this.invokeCallback('onFlushed', this.traceId, itemCount);
       if (this.autoKeepAlive) {
         this.startKeepAlive();
       }
     } catch (err) {
-      console.error('[MiradorTrace] FlushTrace error after retries:', err);
+      this.client.logger.error('[MiradorTrace] FlushTrace error after retries:', err);
+      this.invokeCallback('onFlushError', err as Error, 'FlushTrace');
+      this.abandonTrace();
     }
   }
 
   /**
    * Build the TraceData payload from pending data.
-   * Stack trace attributes are included on the first flush only (when traceId is null).
+   * Stack trace attributes are included on the first flush only.
    */
   private buildTraceData(): TraceData {
     const attributesToSend = { ...this.pendingAttributes };
@@ -735,6 +943,11 @@ export class Trace {
     }
 
     this.keepAliveTimer = setInterval(() => {
+      // Max trace lifetime safety net (0 = disabled)
+      if (this.maxTraceLifetimeMs > 0 && Date.now() - this.traceCreatedAt >= this.maxTraceLifetimeMs) {
+        this.close('Max trace lifetime exceeded');
+        return;
+      }
       this.sendKeepAlive();
     }, this.keepAliveIntervalMs);
   }
@@ -750,27 +963,70 @@ export class Trace {
   }
 
   /**
-   * Send a keep-alive ping to the server
+   * Send a keep-alive ping to the server.
+   * Includes in-flight guard, single retry, and consecutive failure tracking.
    */
   private async sendKeepAlive(): Promise<void> {
-    if (!this.traceId || this.closed) {
+    if (!this.traceId || this.closed || this.abandoned) {
       return;
     }
 
-    try {
-      const request: KeepAliveRequest = {
-        traceId: this.traceId,
-      };
+    // In-flight guard — skip if previous keepAlive hasn't completed
+    if (this.keepAliveInFlight) {
+      return;
+    }
 
-      const response = await this.client._keepAlive(request);
+    this.keepAliveInFlight = true;
+    const request: KeepAliveRequest = {
+      traceId: this.traceId,
+    };
+
+    try {
+      const response = await this.withTimeout(
+        this.client._keepAlive(request),
+        this.callTimeoutMs,
+      );
 
       if (!response.accepted) {
-        console.warn('[MiradorTrace] Keep-alive not accepted for trace:', this.traceId);
+        this.client.logger.warn('[MiradorTrace] Keep-alive not accepted for trace:', this.traceId);
         this.stopKeepAlive();
       }
-    } catch (error) {
-      console.error('[MiradorTrace] Keep-alive error:', error);
+      this.keepAliveConsecutiveFailures = 0;
+    } catch (firstErr) {
+      // Single immediate retry before counting as failure
+      try {
+        const retryResponse = await this.withTimeout(
+          this.client._keepAlive(request),
+          this.callTimeoutMs,
+        );
+        if (retryResponse.accepted) {
+          this.keepAliveConsecutiveFailures = 0;
+          return;
+        }
+      } catch {
+        // Retry also failed
+      }
+
+      this.keepAliveConsecutiveFailures++;
+      this.client.logger.error('[MiradorTrace] Keep-alive error:', firstErr);
+      if (this.keepAliveConsecutiveFailures >= Trace.MAX_KEEPALIVE_FAILURES) {
+        this.client.logger.warn('[MiradorTrace] KeepAlive stopped after consecutive failures');
+        this.stopKeepAlive();
+      }
+    } finally {
+      this.keepAliveInFlight = false;
     }
+  }
+
+  /**
+   * Mark the trace as abandoned after retry exhaustion.
+   * No further API calls will be attempted.
+   */
+  private abandonTrace(): void {
+    this.abandoned = true;
+    this.microtaskScheduled = false;
+    this.stopKeepAlive();
+    this.clearPending();
   }
 
   /**
@@ -789,24 +1045,94 @@ export class Trace {
     this.closed = true;
     this.stopKeepAlive();
 
-    // Wait for all flushes (including the one we just triggered) to complete
-    await this.flushQueue;
+    // If trace was abandoned, skip all network calls
+    if (this.abandoned) {
+      return;
+    }
 
+    // Wait for flush queue with a timeout to avoid indefinite hangs
+    await Promise.race([this.flushQueue, this.sleep(5000)]);
+
+    // Send close request — retry once on failure
     if (this.traceId) {
-      try {
-        const request: CloseTraceRequest = {
-          traceId: this.traceId,
-          text: reason,
-        };
+      const request: CloseTraceRequest = {
+        traceId: this.traceId,
+        text: reason,
+      };
 
-        const response = await this.client._closeTrace(request);
+      try {
+        const response = await this.withTimeout(
+          this.client._closeTrace(request),
+          3000,
+        );
 
         if (!response.accepted) {
-          console.warn('[MiradorTrace] Close request not accepted for trace:', this.traceId);
+          this.client.logger.warn('[MiradorTrace] Close request not accepted for trace:', this.traceId);
         }
-      } catch (error) {
-        console.error('[MiradorTrace] Close error:', error);
+      } catch {
+        // Single retry
+        try {
+          await this.withTimeout(
+            this.client._closeTrace(request),
+            3000,
+          );
+        } catch (retryErr) {
+          this.client.logger.error('[MiradorTrace] CloseTrace error after retry:', retryErr);
+        }
       }
+
+      this.invokeCallback('onClosed', this.traceId, reason);
     }
   }
+}
+
+/**
+ * No-op trace returned when sampling decides not to send the trace.
+ * Has the same API surface as Trace but does nothing.
+ */
+export class NoopTrace extends Trace {
+  constructor() {
+    const noopLogger = { debug() {}, warn() {}, error() {} };
+    const noop = () => Promise.resolve({ status: null, traceId: '', accepted: true } as never);
+    const stub: TraceSubmitter = {
+      _flushTrace: noop,
+      _keepAlive: noop,
+      _closeTrace: noop,
+      logger: noopLogger,
+      rateLimitedUntil: 0,
+    };
+    super(stub, {
+      traceId: '0'.repeat(32),
+      captureStackTrace: false,
+      maxRetries: 0,
+      retryBackoff: 0,
+      keepAliveIntervalMs: 0,
+      autoKeepAlive: false,
+      callTimeoutMs: 0,
+      maxTraceLifetimeMs: 0,
+    });
+    // Immediately close to prevent any timers or network calls
+    (this as unknown as { closed: boolean }).closed = true;
+  }
+
+  // Override all public methods to be no-ops
+  addAttribute(): this { return this; }
+  addAttributes(): this { return this; }
+  addTag(): this { return this; }
+  addTags(): this { return this; }
+  addEvent(): this { return this; }
+  addStackTrace(): this { return this; }
+  addExistingStackTrace(): this { return this; }
+  addTxHint(): this { return this; }
+  addSafeMsgHint(): this { return this; }
+  addSafeTxHint(): this { return this; }
+  addTxInputData(): this { return this; }
+  addTx(): this { return this; }
+  setProvider(): this { return this; }
+  flush(): void {}
+  async close(): Promise<void> {}
+  getTraceId(): string { return '0'.repeat(32); }
+  isClosed(): boolean { return true; }
+  startKeepAlive(): void {}
+  stopKeepAlive(): void {}
 }

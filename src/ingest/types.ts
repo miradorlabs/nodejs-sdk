@@ -46,6 +46,30 @@ export interface MiradorProviderOptions {
 }
 
 /**
+ * Logger interface for configurable SDK logging.
+ * Defaults to no-op unless debug mode is enabled or a custom logger is provided.
+ */
+export interface Logger {
+  debug(...args: unknown[]): void;
+  warn(...args: unknown[]): void;
+  error(...args: unknown[]): void;
+}
+
+/**
+ * Lifecycle callbacks for observing trace events programmatically.
+ */
+export interface TraceCallbacks {
+  /** Called after a successful flush */
+  onFlushed?: (traceId: string, itemCount: number) => void;
+  /** Called when a flush operation fails after retries */
+  onFlushError?: (error: Error, operation: string) => void;
+  /** Called when the trace is closed */
+  onClosed?: (traceId: string, reason?: string) => void;
+  /** Called when items are dropped (e.g., queue full) */
+  onDropped?: (count: number, reason: string) => void;
+}
+
+/**
  * Options for Client constructor
  */
 export interface ClientOptions {
@@ -57,6 +81,18 @@ export interface ClientOptions {
   provider?: EIP1193Provider;
   /** Use SSL for gRPC connection (default: true, set false for local development) */
   useSsl?: boolean;
+  /** Per-call timeout in milliseconds for gRPC operations (default: 5000) */
+  callTimeoutMs?: number;
+  /** Enable debug logging (default: false) */
+  debug?: boolean;
+  /** Custom logger implementation (defaults to no-op) */
+  logger?: Logger;
+  /** Default lifecycle callbacks for all traces (can be overridden per-trace) */
+  callbacks?: TraceCallbacks;
+  /** Sample rate for traces, between 0 and 1 (default: 1 = send all traces). */
+  sampleRate?: number;
+  /** Custom sampler function. Takes precedence over sampleRate when provided. Return true to sample (send) the trace. */
+  sampler?: (options: TraceOptions) => boolean;
 }
 
 /**
@@ -145,6 +181,12 @@ export interface TraceOptions {
   provider?: EIP1193Provider;
   /** Whether to automatically start keep-alive pings. Defaults to true for new traces, false when resuming via traceId. */
   autoKeepAlive?: boolean;
+  /** Maximum trace lifetime in milliseconds (default: 0 = disabled). Auto-closes trace after this duration. */
+  maxTraceLifetimeMs?: number;
+  /** Maximum number of items in the pending queue before dropping (default: 4096) */
+  maxQueueSize?: number;
+  /** Per-trace lifecycle callbacks (overrides client-level defaults) */
+  callbacks?: TraceCallbacks;
 }
 
 /**

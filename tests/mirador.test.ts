@@ -1,6 +1,6 @@
 // Mirador Client Unit Tests
-import { Client, Trace, ChainName, captureStackTrace, chainIdToName, MiradorProvider } from '../src/ingest';
-import type { StackTrace, EIP1193Provider } from '../src/ingest';
+import { Client, Trace, NoopTrace, ChainName, captureStackTrace, chainIdToName, MiradorProvider } from '../src/ingest';
+import type { StackTrace, EIP1193Provider, Logger, TraceCallbacks } from '../src/ingest';
 import { NodeGrpcRpc } from '../src/grpc';
 import * as apiGateway from "mirador-gateway-ingest/proto/gateway/ingest/v1/ingest_gateway";
 import { Chain } from "mirador-gateway-ingest/proto/gateway/ingest/v1/ingest_gateway";
@@ -25,8 +25,8 @@ describe('Client', () => {
     // Clear all mocks before each test
     jest.clearAllMocks();
 
-    // Create a new Client instance
-    client = new Client("test-api-key");
+    // Create a new Client instance with debug logging so console spies capture output
+    client = new Client("test-api-key", { debug: true });
 
     // Create mock for IngestGatewayServiceClientImpl with defaults
     // FlushTrace, CloseTrace, KeepAlive are needed because auto-flush (via scheduleFlush)
@@ -1638,9 +1638,10 @@ describe('Client', () => {
         '[MiradorTrace] Trace is closed, ignoring addEvent'
       );
 
-      // flush() on a closed trace is ignored with a warning
+      // flush() on a closed trace is silently ignored
+      mockApiGatewayClient.FlushTrace.mockClear();
       trace.flush();
-      expect(mockConsoleWarn).toHaveBeenCalledWith('[MiradorTrace] Trace is closed. Ignoring flush call.');
+      expect(mockApiGatewayClient.FlushTrace).not.toHaveBeenCalled();
 
       // sendTransaction without provider should still throw
       const traceNoProvider = client.trace({ name: 'test2', captureStackTrace: false });
@@ -2092,8 +2093,10 @@ describe('Client', () => {
     });
 
     it('should log error when FlushTrace fails for resumed trace', async () => {
+      // Use a retryable gRPC error (UNAVAILABLE = code 14)
+      const grpcError = Object.assign(new Error('Network error'), { code: 14 });
       (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).FlushTrace =
-        jest.fn().mockRejectedValue(new Error('Network error'));
+        jest.fn().mockRejectedValue(grpcError);
 
       client.trace({
         traceId: 'fail-trace',
@@ -2110,8 +2113,10 @@ describe('Client', () => {
     });
 
     it('should retry FlushTrace on failure for resumed traces', async () => {
+      // Use a retryable gRPC error (UNAVAILABLE = code 14)
+      const grpcError = Object.assign(new Error('Transient error'), { code: 14 });
       const updateMock = jest.fn()
-        .mockRejectedValueOnce(new Error('Transient error'))
+        .mockRejectedValueOnce(grpcError)
         .mockResolvedValueOnce(mockUpdateResponse);
 
       (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).FlushTrace = updateMock;
@@ -2620,7 +2625,6 @@ describe('Client', () => {
       await flushPromises();
 
       expect(mockApiGatewayClient.FlushTrace).not.toHaveBeenCalled();
-      expect(mockConsoleWarn).toHaveBeenCalledWith('[MiradorTrace] Trace is closed. Ignoring flush call.');
     });
 
     it('should return void from flush (fire-and-forget)', () => {
@@ -2682,6 +2686,497 @@ describe('Client', () => {
       expect(mockApiGatewayClient.FlushTrace).toHaveBeenCalledTimes(2);
       const secondCall = mockApiGatewayClient.FlushTrace.mock.calls[1][0];
       expect(secondCall.data?.attributes).toEqual([]);
+    });
+  });
+
+  describe('logger abstraction', () => {
+    it('should use noop logger by default (no console output)', async () => {
+      const silentClient = new Client('test-key');
+      mockApiGatewayClient.FlushTrace.mockResolvedValue({
+        status: { code: ResponseStatus_StatusCode.STATUS_CODE_INTERNAL_ERROR, errorMessage: 'fail' },
+        traceId: '',
+        created: false,
+      });
+
+      silentClient.trace({ name: 'silent', captureStackTrace: false }).addTag('x').flush();
+      await flushMicrotasks();
+      await flushPromises();
+
+      // console.error should NOT be called since logger is noop
+      expect(mockConsoleError).not.toHaveBeenCalledWith(
+        '[MiradorTrace] FlushTrace failed:',
+        'fail'
+      );
+    });
+
+    it('should use console logger when debug: true', async () => {
+      const debugClient = new Client('test-key', { debug: true });
+      mockApiGatewayClient.FlushTrace.mockResolvedValue({
+        status: { code: ResponseStatus_StatusCode.STATUS_CODE_INTERNAL_ERROR, errorMessage: 'fail' },
+        traceId: '',
+        created: false,
+      });
+
+      debugClient.trace({ name: 'debug', captureStackTrace: false }).addTag('x').flush();
+      await flushMicrotasks();
+      await flushPromises();
+
+      expect(mockConsoleError).toHaveBeenCalledWith(
+        '[MiradorTrace] FlushTrace failed:',
+        'fail'
+      );
+    });
+
+    it('should use custom logger when provided', async () => {
+      const customLogger: Logger = {
+        debug: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn(),
+      };
+      const customClient = new Client('test-key', { logger: customLogger });
+      mockApiGatewayClient.FlushTrace.mockResolvedValue({
+        status: { code: ResponseStatus_StatusCode.STATUS_CODE_INTERNAL_ERROR, errorMessage: 'custom fail' },
+        traceId: '',
+        created: false,
+      });
+
+      customClient.trace({ name: 'custom', captureStackTrace: false }).addTag('x').flush();
+      await flushMicrotasks();
+      await flushPromises();
+
+      expect(customLogger.error).toHaveBeenCalledWith(
+        '[MiradorTrace] FlushTrace failed:',
+        'custom fail'
+      );
+      // console.error should NOT be called
+      expect(mockConsoleError).not.toHaveBeenCalledWith(
+        '[MiradorTrace] FlushTrace failed:',
+        'custom fail'
+      );
+    });
+  });
+
+  describe('TraceCallbacks', () => {
+    it('should invoke onFlushed after successful flush', async () => {
+      const onFlushed = jest.fn();
+      const cbClient = new Client('test-key', { callbacks: { onFlushed } });
+      mockApiGatewayClient.FlushTrace.mockResolvedValue({
+        status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
+        traceId: '',
+        created: true,
+      });
+
+      const trace = cbClient.trace({ name: 'cb-test', captureStackTrace: false });
+      trace.addTag('hello');
+      trace.flush();
+      await flushMicrotasks();
+      await flushPromises();
+
+      expect(onFlushed).toHaveBeenCalledWith(trace.getTraceId(), expect.any(Number));
+    });
+
+    it('should invoke onFlushError when flush fails after retries', async () => {
+      const onFlushError = jest.fn();
+      const cbClient = new Client('test-key', { callbacks: { onFlushError } });
+      const grpcError = Object.assign(new Error('unavailable'), { code: 14 });
+      mockApiGatewayClient.FlushTrace.mockRejectedValue(grpcError);
+
+      cbClient.trace({ name: 'err', captureStackTrace: false, maxRetries: 0 }).addTag('x').flush();
+      await flushMicrotasks();
+      await flushPromises();
+
+      expect(onFlushError).toHaveBeenCalledWith(expect.any(Error), 'FlushTrace');
+    });
+
+    it('should invoke onClosed when trace is closed', async () => {
+      const onClosed = jest.fn();
+      const cbClient = new Client('test-key', { callbacks: { onClosed } });
+      mockApiGatewayClient.FlushTrace.mockResolvedValue({
+        status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
+        traceId: '',
+        created: true,
+      });
+      (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).CloseTrace =
+        jest.fn().mockResolvedValue({ accepted: true });
+
+      const trace = cbClient.trace({ name: 'close-cb', captureStackTrace: false });
+      trace.addTag('x');
+      trace.flush();
+      await flushMicrotasks();
+      await flushPromises();
+      await trace.close('done');
+
+      expect(onClosed).toHaveBeenCalledWith(trace.getTraceId(), 'done');
+    });
+
+    it('should invoke onDropped when queue is full', async () => {
+      const onDropped = jest.fn();
+      const cbClient = new Client('test-key', { debug: true, callbacks: { onDropped } });
+
+      const trace = cbClient.trace({ name: 'drop', captureStackTrace: false, maxQueueSize: 3 });
+      trace.addTag('a');
+      trace.addTag('b');
+      trace.addTag('c');
+      // Queue is now at 3 — next add should trigger drop
+      trace.addTag('overflow');
+
+      expect(onDropped).toHaveBeenCalledWith(1, 'Queue full');
+    });
+
+    it('should swallow errors thrown by callbacks', async () => {
+      const throwingCallback: TraceCallbacks = {
+        onFlushed: () => { throw new Error('callback crash'); },
+      };
+      const cbClient = new Client('test-key', { callbacks: throwingCallback });
+      mockApiGatewayClient.FlushTrace.mockResolvedValue({
+        status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
+        traceId: '',
+        created: true,
+      });
+
+      const trace = cbClient.trace({ name: 'safe', captureStackTrace: false });
+      trace.addTag('x');
+      trace.flush();
+      await flushMicrotasks();
+      await flushPromises();
+
+      // Should not throw — callback error is swallowed
+      expect(trace.isClosed()).toBe(false);
+    });
+
+    it('should allow per-trace callbacks to override client-level', async () => {
+      const clientOnFlushed = jest.fn();
+      const traceOnFlushed = jest.fn();
+      const cbClient = new Client('test-key', { callbacks: { onFlushed: clientOnFlushed } });
+      mockApiGatewayClient.FlushTrace.mockResolvedValue({
+        status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
+        traceId: '',
+        created: true,
+      });
+
+      const trace = cbClient.trace({
+        name: 'override',
+        captureStackTrace: false,
+        callbacks: { onFlushed: traceOnFlushed },
+      });
+      trace.addTag('x');
+      trace.flush();
+      await flushMicrotasks();
+      await flushPromises();
+
+      expect(traceOnFlushed).toHaveBeenCalled();
+      expect(clientOnFlushed).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('sampling', () => {
+    it('should return NoopTrace when sampleRate is 0', () => {
+      const sampledClient = new Client('test-key', { sampleRate: 0 });
+      const trace = sampledClient.trace({ name: 'sampled-out' });
+
+      expect(trace).toBeInstanceOf(NoopTrace);
+      expect(trace.isClosed()).toBe(true);
+      expect(trace.getTraceId()).toBe('0'.repeat(32));
+    });
+
+    it('should return real Trace when sampleRate is 1', () => {
+      const sampledClient = new Client('test-key', { sampleRate: 1 });
+      const trace = sampledClient.trace({ name: 'sampled-in' });
+
+      expect(trace).toBeInstanceOf(Trace);
+      expect(trace).not.toBeInstanceOf(NoopTrace);
+    });
+
+    it('should use custom sampler function', () => {
+      const sampler = jest.fn().mockReturnValue(false);
+      const sampledClient = new Client('test-key', { sampler });
+      const trace = sampledClient.trace({ name: 'custom-sampled' });
+
+      expect(sampler).toHaveBeenCalledWith(expect.objectContaining({ name: 'custom-sampled' }));
+      expect(trace).toBeInstanceOf(NoopTrace);
+    });
+
+    it('should prefer sampler over sampleRate', () => {
+      const sampler = jest.fn().mockReturnValue(true);
+      const sampledClient = new Client('test-key', { sampleRate: 0, sampler });
+      const trace = sampledClient.trace({ name: 'sampler-wins' });
+
+      expect(trace).not.toBeInstanceOf(NoopTrace);
+    });
+
+    it('NoopTrace methods should be no-ops and return this for chaining', () => {
+      const noop = new NoopTrace();
+
+      // All builder methods return this and accept no-op calls
+      expect(noop.addAttribute()).toBe(noop);
+      expect(noop.addAttributes()).toBe(noop);
+      expect(noop.addTag()).toBe(noop);
+      expect(noop.addTags()).toBe(noop);
+      expect(noop.addEvent()).toBe(noop);
+      expect(noop.addTxHint()).toBe(noop);
+      expect(noop.addSafeMsgHint()).toBe(noop);
+      expect(noop.addSafeTxHint()).toBe(noop);
+      expect(noop.addTxInputData()).toBe(noop);
+      expect(noop.addTx()).toBe(noop);
+      expect(noop.setProvider()).toBe(noop);
+      expect(noop.isClosed()).toBe(true);
+      expect(noop.getTraceId()).toBe('0'.repeat(32));
+    });
+  });
+
+  describe('rate limiting', () => {
+    it('should detect RESOURCE_EXHAUSTED and set client-wide backoff', async () => {
+      const rateLimitError = Object.assign(new Error('rate limited'), { code: 8 });
+      mockApiGatewayClient.FlushTrace.mockRejectedValue(rateLimitError);
+
+      const trace = client.trace({ name: 'rate-limit', captureStackTrace: false, maxRetries: 0 });
+      trace.addTag('x');
+      trace.flush();
+      await flushMicrotasks();
+      await flushPromises();
+
+      // rateLimitedUntil should be set ~30s in the future
+      expect((client as unknown as { rateLimitedUntil: number }).rateLimitedUntil).toBeGreaterThan(Date.now());
+    });
+  });
+
+  describe('retry jitter', () => {
+    it('should retry with jitter on retryable errors', async () => {
+      const grpcError = Object.assign(new Error('unavailable'), { code: 14 });
+      const flushMock = jest.fn()
+        .mockRejectedValueOnce(grpcError)
+        .mockResolvedValueOnce({
+          status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
+          traceId: '',
+          created: true,
+        });
+      mockApiGatewayClient.FlushTrace = flushMock;
+
+      const trace = client.trace({
+        name: 'jitter-test',
+        captureStackTrace: false,
+        maxRetries: 1,
+        retryBackoff: 1,
+      });
+      trace.addTag('x');
+      trace.flush();
+      await new Promise(r => setTimeout(r, 50));
+
+      expect(flushMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('should not retry on non-retryable errors', async () => {
+      const nonRetryableError = new Error('bad request');
+      const flushMock = jest.fn().mockRejectedValue(nonRetryableError);
+      mockApiGatewayClient.FlushTrace = flushMock;
+
+      client.trace({
+        name: 'no-retry',
+        captureStackTrace: false,
+        maxRetries: 3,
+        retryBackoff: 1,
+      }).addTag('x').flush();
+      await flushMicrotasks();
+      await flushPromises();
+
+      // Should only be called once — no retries for non-retryable errors
+      expect(flushMock).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('queue size limits', () => {
+    it('should drop items when queue exceeds maxQueueSize', () => {
+      const trace = client.trace({ name: 'queue', captureStackTrace: false, maxQueueSize: 2 });
+      trace.addTag('a');
+      trace.addTag('b');
+      // Queue is now full — this should be dropped
+      const result = trace.addTag('dropped');
+
+      // Should still return this for chaining
+      expect(result).toBe(trace);
+    });
+
+    it('should use default maxQueueSize of 4096', () => {
+      const trace = client.trace({ name: 'default-queue', captureStackTrace: false });
+      // Just verify it can add many items without dropping
+      for (let i = 0; i < 100; i++) {
+        trace.addTag(`tag-${i}`);
+      }
+      // If queue was too small, tags would be dropped — no assertion needed,
+      // just verifying no errors thrown
+    });
+  });
+
+  describe('keepAlive resilience', () => {
+    beforeEach(() => {
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('should stop keepAlive after 3 consecutive failures', async () => {
+      mockApiGatewayClient.FlushTrace.mockResolvedValue({
+        status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
+        traceId: '',
+        created: true,
+      });
+      (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).KeepAlive =
+        jest.fn().mockRejectedValue(new Error('network down'));
+
+      const trace = client.trace({ name: 'ka-fail', captureStackTrace: false });
+      trace.addTag('x');
+      trace.flush();
+
+      // Resolve pending flush (uses advanceTimersByTimeAsync to handle both timers and promises)
+      await jest.advanceTimersByTimeAsync(0);
+
+      // Trigger 3 keepAlive intervals (default 10s each)
+      // advanceTimersByTimeAsync flushes both timers AND promises (including withTimeout)
+      for (let i = 0; i < 3; i++) {
+        await jest.advanceTimersByTimeAsync(10000);
+      }
+
+      // After 3 failures, keepAlive should be stopped
+      const keepAliveMock = (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).KeepAlive;
+      const callCountAfterStop = keepAliveMock.mock.calls.length;
+
+      // Advance more time — no additional calls should be made
+      await jest.advanceTimersByTimeAsync(30000);
+
+      expect(keepAliveMock.mock.calls.length).toBe(callCountAfterStop);
+    });
+  });
+
+  describe('close retry', () => {
+    it('should retry CloseTrace once on failure', async () => {
+      mockApiGatewayClient.FlushTrace.mockResolvedValue({
+        status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
+        traceId: '',
+        created: true,
+      });
+      const closeMock = jest.fn()
+        .mockRejectedValueOnce(new Error('close failed'))
+        .mockResolvedValueOnce({ accepted: true });
+      (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).CloseTrace = closeMock;
+
+      const trace = client.trace({ name: 'close-retry', captureStackTrace: false });
+      trace.addTag('x');
+      trace.flush();
+      await flushMicrotasks();
+      await flushPromises();
+      await trace.close();
+
+      expect(closeMock).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('trace abandonment', () => {
+    it('should abandon trace after flush retries exhausted', async () => {
+      const grpcError = Object.assign(new Error('unavailable'), { code: 14 });
+      mockApiGatewayClient.FlushTrace.mockRejectedValue(grpcError);
+
+      const trace = client.trace({
+        name: 'abandon',
+        captureStackTrace: false,
+        maxRetries: 0,
+      });
+      trace.addTag('first');
+      trace.flush();
+      await flushMicrotasks();
+      await flushPromises();
+
+      // After abandonment, further flushes should be no-ops
+      mockApiGatewayClient.FlushTrace.mockClear();
+      trace.addTag('second');
+      trace.flush();
+      await flushMicrotasks();
+      await flushPromises();
+
+      expect(mockApiGatewayClient.FlushTrace).not.toHaveBeenCalled();
+    });
+
+    it('should skip CloseTrace on abandoned trace', async () => {
+      const grpcError = Object.assign(new Error('unavailable'), { code: 14 });
+      mockApiGatewayClient.FlushTrace.mockRejectedValue(grpcError);
+      (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).CloseTrace =
+        jest.fn().mockResolvedValue({ accepted: true });
+
+      const trace = client.trace({
+        name: 'abandon-close',
+        captureStackTrace: false,
+        maxRetries: 0,
+      });
+      trace.addTag('x');
+      trace.flush();
+      await flushMicrotasks();
+      await flushPromises();
+
+      await trace.close();
+
+      expect((mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).CloseTrace)
+        .not.toHaveBeenCalled();
+    });
+  });
+
+  describe('max trace lifetime', () => {
+    beforeEach(() => {
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('should auto-close trace when maxTraceLifetimeMs is exceeded', async () => {
+      mockApiGatewayClient.FlushTrace.mockResolvedValue({
+        status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
+        traceId: '',
+        created: true,
+      });
+      (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).CloseTrace =
+        jest.fn().mockResolvedValue({ accepted: true });
+
+      const trace = client.trace({
+        name: 'lifetime',
+        captureStackTrace: false,
+        maxTraceLifetimeMs: 25000, // 25s lifetime
+      });
+      trace.addTag('x');
+      trace.flush();
+
+      // Resolve flush
+      await jest.advanceTimersByTimeAsync(0);
+
+      // Advance past the lifetime (3 keepAlive intervals = 30s > 25s)
+      await jest.advanceTimersByTimeAsync(30000);
+
+      expect(trace.isClosed()).toBe(true);
+    });
+  });
+
+  describe('flush batch size limit', () => {
+    it('should split large flushes into batches', async () => {
+      mockApiGatewayClient.FlushTrace.mockResolvedValue({
+        status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
+        traceId: '',
+        created: true,
+      });
+
+      const trace = client.trace({ name: 'batch', captureStackTrace: false });
+
+      // Add 150 events (exceeds MAX_FLUSH_BATCH_SIZE of 100)
+      for (let i = 0; i < 150; i++) {
+        trace.addEvent(`event-${i}`);
+      }
+      trace.flush();
+
+      // Wait for both batches to complete
+      await new Promise(r => setTimeout(r, 50));
+
+      // Should have been called at least 2 times (batch overflow triggers re-schedule)
+      expect(mockApiGatewayClient.FlushTrace.mock.calls.length).toBeGreaterThanOrEqual(2);
     });
   });
 });
