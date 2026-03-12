@@ -2914,6 +2914,8 @@ describe('Client', () => {
       expect(noop.addTag()).toBe(noop);
       expect(noop.addTags()).toBe(noop);
       expect(noop.addEvent()).toBe(noop);
+      expect(noop.addStackTrace()).toBe(noop);
+      expect(noop.addExistingStackTrace()).toBe(noop);
       expect(noop.addTxHint()).toBe(noop);
       expect(noop.addSafeMsgHint()).toBe(noop);
       expect(noop.addSafeTxHint()).toBe(noop);
@@ -2922,6 +2924,12 @@ describe('Client', () => {
       expect(noop.setProvider()).toBe(noop);
       expect(noop.isClosed()).toBe(true);
       expect(noop.getTraceId()).toBe('0'.repeat(32));
+    });
+
+    it('NoopTrace.sendTransaction should return empty string', async () => {
+      const noop = new NoopTrace();
+      const result = await noop.sendTransaction();
+      expect(result).toBe('');
     });
   });
 

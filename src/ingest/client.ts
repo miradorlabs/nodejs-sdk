@@ -70,7 +70,7 @@ export class Client {
    */
   constructor(apiKey?: string, options?: ClientOptions) {
     this.apiKey = apiKey;
-    this.apiUrl = options?.apiUrl || DEFAULT_API_URL;
+    this.apiUrl = options?.apiUrl ?? DEFAULT_API_URL;
     this.keepAliveIntervalMs = options?.keepAliveIntervalMs ?? DEFAULT_KEEP_ALIVE_INTERVAL_MS;
     this.callTimeoutMs = options?.callTimeoutMs ?? DEFAULT_CALL_TIMEOUT_MS;
     this.provider = options?.provider;

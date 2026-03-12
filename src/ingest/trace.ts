@@ -34,10 +34,11 @@ interface ResolvedTraceOptions {
   callbacks?: TraceCallbacks;
 }
 
-/** gRPC status codes that are safe to retry */
+/** gRPC status codes that are safe to retry.
+ * Note: RESOURCE_EXHAUSTED (8) is handled separately in retryWithBackoff
+ * via client-wide rate limiting, not via retry. */
 const RETRYABLE_GRPC_CODES = new Set([
   4,  // DEADLINE_EXCEEDED
-  8,  // RESOURCE_EXHAUSTED (rate limited)
   13, // INTERNAL
   14, // UNAVAILABLE
 ]);
@@ -210,6 +211,10 @@ export class Trace {
    * Check if the queue is full and warn/invoke callback if so
    */
   private isQueueFull(itemCount: number = 1): boolean {
+    if (this.abandoned) {
+      this.invokeCallback('onDropped', itemCount, 'Trace abandoned');
+      return true;
+    }
     if (this.pendingCount + itemCount > this.maxQueueSize) {
       this.client.logger.warn(`[MiradorTrace] Queue full (${this.maxQueueSize}), dropping ${itemCount} item(s)`);
       this.invokeCallback('onDropped', itemCount, 'Queue full');
@@ -541,7 +546,7 @@ export class Trace {
    * @returns This trace builder for chaining
    */
   addTx(tx: TransactionLike, chain?: ChainName): this {
-    if (this.closed) {
+    if (this.closed || this.abandoned) {
       this.client.logger.warn('[MiradorTrace] Trace is closed, ignoring addTx');
       return this;
     }
@@ -751,9 +756,9 @@ export class Trace {
 
       await this.flushTrace(traceData, itemCount);
     }).catch(err => {
+      // Safety net — flushTrace already handles expected errors and invokes onFlushError
       const context = traceName ? ` (trace: ${traceName})` : '';
-      this.client.logger.error(`[MiradorTrace] Flush error during FlushTrace${context}:`, err);
-      this.invokeCallback('onFlushError', err as Error, 'FlushTrace');
+      this.client.logger.error(`[MiradorTrace] Unexpected flush error${context}:`, err);
     });
   }
 
@@ -873,7 +878,11 @@ export class Trace {
       // so we don't expect the server to reassign them. If server-side deduplication
       // or ID correction is ever needed, this is where to handle the reassigned ID.
 
+      const wasFirstFlush = !this.flushedOnce;
       this.flushedOnce = true;
+      if (wasFirstFlush) {
+        this.invokeCallback('onCreated', this.traceId);
+      }
       this.invokeCallback('onFlushed', this.traceId, itemCount);
       if (this.autoKeepAlive) {
         this.startKeepAlive();
@@ -1017,6 +1026,10 @@ export class Trace {
           this.keepAliveConsecutiveFailures = 0;
           return;
         }
+        // Retry succeeded but not accepted — stop keepalive
+        this.client.logger.warn('[MiradorTrace] Keep-alive not accepted for trace:', this.traceId);
+        this.stopKeepAlive();
+        return;
       } catch {
         // Retry also failed
       }

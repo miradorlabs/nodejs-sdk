@@ -59,6 +59,8 @@ export interface Logger {
  * Lifecycle callbacks for observing trace events programmatically.
  */
 export interface TraceCallbacks {
+  /** Called once when the trace is first created on the server (first successful flush) */
+  onCreated?: (traceId: string) => void;
   /** Called after a successful flush */
   onFlushed?: (traceId: string, itemCount: number) => void;
   /** Called when a flush operation fails after retries */
