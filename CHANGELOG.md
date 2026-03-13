@@ -1,5 +1,20 @@
 # Changelog
 
+## [2.0.0](https://github.com/miradorlabs/nodejs-sdk/compare/v1.7.0...v2.0.0) (2026-03-13)
+
+
+### ⚠ BREAKING CHANGES
+
+* removed deprecated functions
+* create() returns client-generated traceId and setTraceId is deprecated
+
+### Features
+
+* add reslience changes to codebase ([0b4b2df](https://github.com/miradorlabs/nodejs-sdk/commit/0b4b2dfd3d24cad7445518b0099f40a25ac5804c))
+* add reslience changes to codebase ([107ace5](https://github.com/miradorlabs/nodejs-sdk/commit/107ace5869ba6860dc3156a15592e28d05845760))
+* remove deprecated functions ([af38639](https://github.com/miradorlabs/nodejs-sdk/commit/af386395ff59a62034af82c4b12454e939a29354))
+* replace CreateTrace/UpdateTrace with idempotent Flush Trace RPC ([eaab131](https://github.com/miradorlabs/nodejs-sdk/commit/eaab1316d132518b2dbb282801c82277be0e2119))
+
 ## [1.7.0](https://github.com/miradorlabs/nodejs-sdk/compare/v1.6.0...v1.7.0) (2026-03-10)
 
 
