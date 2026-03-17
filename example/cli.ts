@@ -8,7 +8,8 @@
  */
 
 import 'dotenv/config';
-import { Client, Trace, ChainName } from '../src/ingest';
+import { Client, ChainName, Web3Plugin } from '../src/ingest';
+import type { MiradorPlugin, Web3Methods } from '../src/ingest';
 import * as readline from 'readline';
 
 // Configuration
@@ -16,8 +17,12 @@ const API_KEY = process.env.MIRADOR_API_KEY || '';
 const API_URL = process.env.GRPC_BASE_URL_API || 'localhost:50053';
 const USE_SSL = API_URL.endsWith(':443');
 
+// Derive typed client/trace with plugin methods
+type MiradorClient = Client<[MiradorPlugin<Web3Methods>]>;
+type MiradorTrace = ReturnType<MiradorClient['trace']>;
+
 // State
-let currentTrace: Trace | null = null;
+let currentTrace: MiradorTrace | null = null;
 let traceId: string | null = null;
 
 // Colors
@@ -42,7 +47,7 @@ const log = {
 const VALID_CHAINS: ChainName[] = ['ethereum', 'polygon', 'arbitrum', 'base', 'optimism', 'bsc'];
 
 // Initialize client
-const client = new Client(API_KEY, { apiUrl: API_URL, useSsl: USE_SSL });
+const client = new Client(API_KEY, { apiUrl: API_URL, useSsl: USE_SSL, plugins: [Web3Plugin()] });
 
 // Parse value (number, boolean, JSON, or string)
 function parseValue(value: string): string | number | boolean | object {
@@ -128,7 +133,7 @@ function tx(hash: string, chain: string, details?: string) {
     log.error(`Invalid chain. Use: ${VALID_CHAINS.join(', ')}`);
     return;
   }
-  currentTrace.addTxHint(hash, chain as ChainName, details);
+  currentTrace.web3.evm.addTxHint(hash, chain as ChainName, details);
   log.success(`Added tx hint: ${hash} on ${chain}`);
 }
 
@@ -146,7 +151,7 @@ function safemsg(msgHash: string, chain: string, details?: string) {
     log.error(`Invalid chain. Use: ${VALID_CHAINS.join(', ')}`);
     return;
   }
-  currentTrace.addSafeMsgHint(msgHash, chain as ChainName, details);
+  currentTrace.web3.safe.addMsgHint(msgHash, chain as ChainName, details);
   log.success(`Added safe msg hint: ${msgHash} on ${chain}`);
 }
 
