@@ -123,7 +123,7 @@ function event(name: string, details?: string) {
       parsedDetails = details;
     }
   }
-  currentTrace.addEvent(name, parsedDetails);
+  currentTrace.info(name, parsedDetails);
   log.success(`Added event: ${name}${details ? ' (with details)' : ''}`);
 }
 

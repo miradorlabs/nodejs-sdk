@@ -65,11 +65,11 @@ export class MiradorProvider implements EIP1193Provider {
         }
       }
 
-      trace.addEvent('tx:sent', { txHash, method: args.method });
+      trace.info('tx:sent', { txHash, method: args.method });
       return result;
     } catch (err) {
       const error = err as Error & { code?: unknown; data?: unknown };
-      trace.addEvent('tx:error', {
+      trace.error('tx:error', {
         message: error.message,
         code: error.code,
         data: error.data,
