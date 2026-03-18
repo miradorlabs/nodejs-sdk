@@ -1,25 +1,17 @@
 /**
- * Chain ID to chain name mapping utilities
+ * Plugin Chain enum to proto Chain enum mapping (SDK-specific, depends on proto package)
  */
-import type { ChainName } from './types';
+import { Chain as ProtoChain } from 'mirador-gateway-ingest/proto/gateway/ingest/v1/ingest_gateway';
+import { Chain } from '@miradorlabs/plugins';
 
 /**
- * Maps EVM chain IDs to Mirador chain names
+ * Maps plugin Chain enum values to proto Chain enum values
  */
-const CHAIN_ID_MAP: Record<number, ChainName> = {
-  1: 'ethereum',
-  137: 'polygon',
-  42161: 'arbitrum',
-  8453: 'base',
-  10: 'optimism',
-  56: 'bsc',
+export const CHAIN_MAP: Record<Chain, ProtoChain> = {
+  [Chain.Ethereum]: ProtoChain.CHAIN_ETHEREUM,
+  [Chain.Polygon]: ProtoChain.CHAIN_POLYGON,
+  [Chain.Arbitrum]: ProtoChain.CHAIN_ARBITRUM,
+  [Chain.Base]: ProtoChain.CHAIN_BASE,
+  [Chain.Optimism]: ProtoChain.CHAIN_OPTIMISM,
+  [Chain.BSC]: ProtoChain.CHAIN_BSC,
 };
-
-/**
- * Convert a chain ID to a Mirador ChainName
- * @param chainId Chain ID as number, bigint, or hex string
- * @returns The ChainName or undefined if not recognized
- */
-export function chainIdToName(chainId: number | bigint | string): ChainName | undefined {
-  return CHAIN_ID_MAP[Number(chainId)];
-}

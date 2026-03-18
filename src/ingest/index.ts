@@ -10,26 +10,40 @@ export { MiradorProvider } from './provider';
 // Stack trace utilities
 export { captureStackTrace, formatStackTrace, formatStackTraceReadable } from './stacktrace';
 
-// Chain utilities
-export { chainIdToName } from './chains';
-
-// Types
+// Plugin system + shared types (re-exported from @miradorlabs/plugins)
+export { Web3Plugin, toChain, Chain, Severity, HintType } from '@miradorlabs/plugins';
 export type {
-  ClientOptions,
+  Web3PluginOptions,
+  Web3Methods,
+  EvmMethods,
+  SafeNamespaceMethods,
+  MiradorPlugin,
+  TraceContext,
+  PluginSetupResult,
+  FlushBuilder,
+  MergedPluginMethods,
+  HintDataMap,
+  HintTypeName,
   ChainName,
-  TraceEvent,
+  ChainInput,
   TxHashHint,
   SafeMsgHintData,
   SafeTxHintData,
-  TraceOptions,
-  AddEventOptions,
-  StackFrame,
-  StackTrace,
   EIP1193Provider,
   TxHintOptions,
   TransactionLike,
   TransactionRequest,
-  MiradorProviderOptions,
+  AddEventOptions,
   Logger,
+} from '@miradorlabs/plugins';
+
+// SDK-specific types
+export type {
+  ClientOptions,
+  TraceEvent,
+  TraceOptions,
+  StackFrame,
+  StackTrace,
+  MiradorProviderOptions,
   TraceCallbacks,
 } from './types';

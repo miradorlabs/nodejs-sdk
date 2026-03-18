@@ -2,57 +2,32 @@
  * TypeScript interfaces for the Mirador Ingest SDK
  */
 
-/** EIP-1193 compatible provider interface */
-export interface EIP1193Provider {
-  request(args: { method: string; params?: unknown[] }): Promise<unknown>;
-}
+// Import shared types used locally in this file
+import type { Logger } from '@miradorlabs/plugins';
 
-/** Options for addTxHint (extends current string details) */
-export interface TxHintOptions {
-  /** Transaction input data / calldata */
-  input?: string;
-  /** Additional details string */
-  details?: string;
-}
-
-/** A transaction-like object (matches ethers/viem/raw RPC response shapes) */
-export interface TransactionLike {
-  hash: string;
-  data?: string;
-  input?: string;
-  chainId?: number | bigint | string;
-}
-
-/** Transaction parameters for sendTransaction (EIP-1193 style) */
-export interface TransactionRequest {
-  from: string;
-  to?: string;
-  data?: string;
-  value?: string | bigint;
-  gas?: string | bigint;
-  gasPrice?: string | bigint;
-  maxFeePerGas?: string | bigint;
-  maxPriorityFeePerGas?: string | bigint;
-  nonce?: number | string;
-  chainId?: number | string;
-}
+// Re-export shared types from plugins package
+export {
+  Chain,
+  Severity,
+  type ChainName,
+  type ChainInput,
+  type EIP1193Provider,
+  type TxHintOptions,
+  type TransactionLike,
+  type TransactionRequest,
+  type Logger,
+  type TxHashHint,
+  type SafeMsgHintData,
+  type SafeTxHintData,
+  type AddEventOptions,
+} from '@miradorlabs/plugins';
 
 /** Options for the MiradorProvider wrapper */
 export interface MiradorProviderOptions {
   /** Bind to an existing trace instead of auto-creating per tx */
-  trace?: unknown;
+  trace?: import('./trace').Trace;
   /** Trace options for auto-created traces (ignored if trace is provided) */
   traceOptions?: TraceOptions;
-}
-
-/**
- * Logger interface for configurable SDK logging.
- * Defaults to no-op unless debug mode is enabled or a custom logger is provided.
- */
-export interface Logger {
-  debug(...args: unknown[]): void;
-  warn(...args: unknown[]): void;
-  error(...args: unknown[]): void;
 }
 
 /**
@@ -79,8 +54,6 @@ export interface ClientOptions {
   apiUrl?: string;
   /** Keep-alive ping interval in milliseconds (default: 10000) */
   keepAliveIntervalMs?: number;
-  /** EIP-1193 provider to use for transaction operations */
-  provider?: EIP1193Provider;
   /** Use SSL for gRPC connection (default: true, set false for local development) */
   useSsl?: boolean;
   /** Per-call timeout in milliseconds for gRPC operations (default: 5000) */
@@ -98,47 +71,13 @@ export interface ClientOptions {
 }
 
 /**
- * Supported chain names (maps to Chain enum in proto)
- */
-export type ChainName = 'ethereum' | 'polygon' | 'arbitrum' | 'base' | 'optimism' | 'bsc';
-
-/**
  * An event to be recorded in a trace
  */
 export interface TraceEvent {
   eventName: string;
   details?: string;
   timestamp: Date;
-}
-
-/**
- * Transaction hash hint for blockchain correlation
- */
-export interface TxHashHint {
-  txHash: string;
-  chain: ChainName;
-  details?: string;
-  timestamp: Date;
-}
-
-/**
- * Safe message hint for Safe multisig message tracking
- */
-export interface SafeMsgHintData {
-  messageHash: string;
-  chain: ChainName;
-  details?: string;
-  timestamp: Date;
-}
-
-/**
- * Safe transaction hint for Safe multisig transaction tracking
- */
-export interface SafeTxHintData {
-  safeTxHash: string;
-  chain: ChainName;
-  details?: string;
-  timestamp: Date;
+  severity?: Severity;
 }
 
 /**
@@ -179,8 +118,6 @@ export interface TraceOptions {
   maxRetries?: number;
   /** Base delay in ms for exponential backoff between retries (default: 500) */
   retryBackoff?: number;
-  /** EIP-1193 provider to use for transaction operations */
-  provider?: EIP1193Provider;
   /** Whether to automatically start keep-alive pings. Defaults to true for new traces, false when resuming via traceId. */
   autoKeepAlive?: boolean;
   /** Maximum trace lifetime in milliseconds (default: 0 = disabled). Auto-closes trace after this duration. */
@@ -189,12 +126,4 @@ export interface TraceOptions {
   maxQueueSize?: number;
   /** Per-trace lifecycle callbacks (overrides client-level defaults) */
   callbacks?: TraceCallbacks;
-}
-
-/**
- * Options for adding an event
- */
-export interface AddEventOptions {
-  /** Capture stack trace at the point where addEvent is called */
-  captureStackTrace?: boolean;
 }
