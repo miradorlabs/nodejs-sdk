@@ -24,6 +24,14 @@ export class MiradorProvider implements EIP1193Provider {
     this.client = client;
     this.boundTrace = (options?.trace as Web3Trace) ?? null;
     this.traceOptions = options?.traceOptions;
+
+    // Eagerly validate Web3Plugin is available on a bound trace
+    if (this.boundTrace && (!this.boundTrace.web3?.evm || typeof this.boundTrace.web3.evm.setProvider !== 'function')) {
+      throw new Error(
+        '[MiradorProvider] Web3Plugin is required. Register it with Client: ' +
+        'new Client(key, { plugins: [Web3Plugin()] })'
+      );
+    }
   }
 
   async request(args: { method: string; params?: unknown[] }): Promise<unknown> {

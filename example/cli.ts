@@ -8,7 +8,7 @@
  */
 
 import 'dotenv/config';
-import { Client, Chain, Web3Plugin } from '../src/ingest';
+import { Client, toChain, Web3Plugin } from '../src/ingest';
 import type { MiradorPlugin, Web3Methods } from '../src/ingest';
 import * as readline from 'readline';
 
@@ -45,14 +45,6 @@ const log = {
 
 // Valid chain names (for CLI input validation)
 const VALID_CHAINS = ['ethereum', 'polygon', 'arbitrum', 'base', 'optimism', 'bsc'] as const;
-const CHAIN_NAME_TO_ENUM: Record<string, Chain> = {
-  ethereum: Chain.Ethereum,
-  polygon: Chain.Polygon,
-  arbitrum: Chain.Arbitrum,
-  base: Chain.Base,
-  optimism: Chain.Optimism,
-  bsc: Chain.BSC,
-};
 
 // Initialize client
 const client = new Client(API_KEY, { apiUrl: API_URL, useSsl: USE_SSL, plugins: [Web3Plugin()] });
@@ -137,7 +129,7 @@ function tx(hash: string, chain: string, details?: string) {
     log.info(`Chains: ${VALID_CHAINS.join(', ')}`);
     return;
   }
-  const chainEnum = CHAIN_NAME_TO_ENUM[chain];
+  const chainEnum = toChain(chain);
   if (!chainEnum) {
     log.error(`Invalid chain. Use: ${VALID_CHAINS.join(', ')}`);
     return;
@@ -156,7 +148,7 @@ function safemsg(msgHash: string, chain: string, details?: string) {
     log.info(`Chains: ${VALID_CHAINS.join(', ')}`);
     return;
   }
-  const chainEnum = CHAIN_NAME_TO_ENUM[chain];
+  const chainEnum = toChain(chain);
   if (!chainEnum) {
     log.error(`Invalid chain. Use: ${VALID_CHAINS.join(', ')}`);
     return;

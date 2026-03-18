@@ -154,7 +154,7 @@ trace.addTag('transaction')
      .addTags(['ethereum', 'send'])
 ```
 
-#### `info(name, details?, options?)` / `warning(...)` / `error(...)`
+#### `info(name, details?, options?)` / `warn(...)` / `error(...)`
 
 Record an event with the corresponding severity level. All three share the same signature.
 
@@ -163,7 +163,7 @@ trace.info('wallet_connected', { wallet: 'MetaMask' })
      .info('transaction_initiated')
      .info('transaction_confirmed', { blockNumber: 12345 })
 
-trace.warning('rate_limit', 'approaching limit')
+trace.warn('rate_limit', 'approaching limit')
 
 trace.error('processing_failed', { code: 500 })
 

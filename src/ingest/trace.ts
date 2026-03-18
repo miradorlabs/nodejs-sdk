@@ -21,6 +21,73 @@ import type { MiradorPlugin, TraceContext, FlushBuilder } from '@miradorlabs/plu
 import { captureStackTrace, formatStackTrace } from './stacktrace';
 import { HINT_SERIALIZERS } from './hint-serializers';
 
+const PROTECTED_KEYS = new Set([
+  'client', 'name', 'traceId', 'closed', 'flushedOnce', 'abandoned', 'closing',
+  'pendingAttributes', 'pendingTags', 'pendingEvents', 'microtaskScheduled',
+  'flushQueue', 'autoKeepAlive', 'keepAliveTimer', 'keepAliveIntervalMs',
+  'maxRetries', 'retryBackoff', 'callTimeoutMs', 'keepAliveInFlight',
+  'keepAliveConsecutiveFailures', 'maxTraceLifetimeMs', 'lifetimeTimer',
+  'maxQueueSize', 'callbacks', 'pluginOnFlush', 'pluginOnClose', 'pluginHasPending',
+  'creationStackTrace', 'creationTimestamp',
+  // Public methods
+  'addAttribute', 'addAttributes', 'addTag', 'addTags', 'addEvent',
+  'info', 'warn', 'error', 'addStackTrace', 'addExistingStackTrace',
+  'flush', 'close', 'isClosed', 'getTraceId', '_initPlugins',
+]);
+
+/**
+ * Merge plugin methods onto a target object (the trace instance).
+ * When `noopSource` is provided, operates in noop mode: functions are replaced with
+ * their noop counterparts (or a no-op returning the trace).
+ * When `noopSource` is undefined, operates in live mode: functions are wrapped to
+ * return the trace when the underlying function returns void, enabling chaining.
+ */
+function mergePluginMethods(
+  target: Record<string, unknown>,
+  source: Record<string, unknown>,
+  trace: Trace,
+  pluginName: string,
+  logger: { warn(...args: unknown[]): void },
+  noopSource?: Record<string, unknown>,
+): void {
+  for (const [key, value] of Object.entries(source)) {
+    if (PROTECTED_KEYS.has(key)) {
+      logger.warn(`[MiradorTrace] Plugin "${pluginName}" tried to register protected key "${key}". Skipping.`);
+      continue;
+    }
+    const noopValue = noopSource?.[key];
+    if (typeof value === 'function') {
+      if (noopSource !== undefined) {
+        // Noop mode: use noop override or return trace
+        target[key] = (noopValue && typeof noopValue === 'function') ? noopValue : () => trace;
+      } else {
+        // Live mode: wrap to return trace for void fns, warn on conflicts
+        if (key in target && typeof target[key] !== 'undefined') {
+          logger.warn(`[MiradorTrace] Plugin "${pluginName}" method "${key}" conflicts with existing method. Skipping.`);
+          continue;
+        }
+        const fn = value as (...args: unknown[]) => unknown;
+        target[key] = (...args: unknown[]) => {
+          const ret = fn(...args);
+          return ret === undefined ? trace : ret;
+        };
+      }
+    } else if (typeof value === 'object' && value !== null) {
+      if (!target[key] || typeof target[key] !== 'object') {
+        target[key] = {};
+      }
+      mergePluginMethods(
+        target[key] as Record<string, unknown>,
+        value as Record<string, unknown>,
+        trace,
+        pluginName,
+        logger,
+        (noopValue && typeof noopValue === 'object') ? noopValue as Record<string, unknown> : undefined,
+      );
+    }
+  }
+}
+
 /** Map plugins Severity to proto Event_Severity */
 const SEVERITY_MAP: Record<number, Event_Severity> = {
   [Severity.Info]: Event_Severity.SEVERITY_INFO,
@@ -184,40 +251,10 @@ export class Trace {
       logger: this.client.logger,
     };
 
-    // eslint-disable-next-line @typescript-eslint/no-this-alias
-    const trace = this;
-
-    function mergeNamespace(
-      target: Record<string, unknown>,
-      source: Record<string, unknown>,
-      pluginName: string,
-    ): void {
-      for (const [key, value] of Object.entries(source)) {
-        if (typeof value === 'function') {
-          if (key in target && typeof target[key] !== 'undefined') {
-            ctx.logger.warn(
-              `[MiradorTrace] Plugin "${pluginName}" method "${key}" conflicts with existing method. Skipping.`
-            );
-            continue;
-          }
-          const fn = value as (...args: unknown[]) => unknown;
-          target[key] = (...args: unknown[]) => {
-            const ret = fn(...args);
-            return ret === undefined ? trace : ret;
-          };
-        } else if (typeof value === 'object' && value !== null) {
-          if (!target[key] || typeof target[key] !== 'object') {
-            target[key] = {};
-          }
-          mergeNamespace(target[key] as Record<string, unknown>, value as Record<string, unknown>, pluginName);
-        }
-      }
-    }
-
     for (const plugin of plugins) {
       try {
         const result = plugin.setup(ctx);
-        mergeNamespace(this as unknown as Record<string, unknown>, result.methods as Record<string, unknown>, plugin.name);
+        mergePluginMethods(this as unknown as Record<string, unknown>, result.methods as Record<string, unknown>, this, plugin.name, ctx.logger);
 
         if (result.onFlush) {
           this.pluginOnFlush.push(result.onFlush);
@@ -238,9 +275,13 @@ export class Trace {
    * Get current total pending items count
    */
   private get pendingCount(): number {
-    return Object.keys(this.pendingAttributes).length +
+    let count = Object.keys(this.pendingAttributes).length +
       this.pendingTags.length +
       this.pendingEvents.length;
+    for (const hasPending of this.pluginHasPending) {
+      try { if (hasPending()) count++; } catch { /* ignore */ }
+    }
+    return count;
   }
 
   /**
@@ -437,7 +478,7 @@ export class Trace {
    * @param details Optional details (string or object)
    * @param options Optional settings (e.g. captureStackTrace)
    */
-  warning(name: string, details?: string | object, options?: Omit<AddEventOptions, 'severity'>): this {
+  warn(name: string, details?: string | object, options?: Omit<AddEventOptions, 'severity'>): this {
     return this.addEvent(name, details, { ...options, severity: Severity.Warn });
   }
 
@@ -562,6 +603,9 @@ export class Trace {
     } else {
       const traceData = this.buildFlushTraceData();
       const itemCount = this.countItems(traceData);
+      if (itemCount > Trace.MAX_FLUSH_BATCH_SIZE) {
+        this.client.logger.warn(`[MiradorTrace] Flush payload size (${itemCount}) exceeds batch limit (${Trace.MAX_FLUSH_BATCH_SIZE})`);
+      }
       this.clearPending();
       this.enqueueFlush(traceData, itemCount);
     }
@@ -1041,6 +1085,10 @@ export class NoopTrace extends Trace {
    * @internal
    */
   _initPlugins(plugins: MiradorPlugin<object>[]): void {
+    const noopLogger = { debug() {}, warn() {}, error() {} };
+    // Known limitation: we must call plugin.setup() to obtain the methods structure,
+    // which means plugins MAY trigger side effects. Well-behaved plugins MUST check
+    // ctx.isClosed() in setup before starting async work (timers, subscriptions, etc.).
     const noopCtx: TraceContext = {
       addEvent() {},
       addAttribute() {},
@@ -1050,44 +1098,18 @@ export class NoopTrace extends Trace {
       getTraceId: () => '0'.repeat(32),
       isClosed: () => true,
       scheduleFlush() {},
-      logger: { debug() {}, warn() {}, error() {} },
+      logger: noopLogger,
     };
-
-    // eslint-disable-next-line @typescript-eslint/no-this-alias
-    const trace = this;
-
-    function mergeNamespaceNoop(
-      target: Record<string, unknown>,
-      source: Record<string, unknown>,
-      noopSource: Record<string, unknown> | undefined,
-    ): void {
-      for (const [key, value] of Object.entries(source)) {
-        const noopValue = noopSource?.[key];
-        if (typeof value === 'function') {
-          if (noopValue && typeof noopValue === 'function') {
-            target[key] = noopValue;
-          } else {
-            target[key] = () => trace;
-          }
-        } else if (typeof value === 'object' && value !== null) {
-          if (!target[key] || typeof target[key] !== 'object') {
-            target[key] = {};
-          }
-          mergeNamespaceNoop(
-            target[key] as Record<string, unknown>,
-            value as Record<string, unknown>,
-            (noopValue && typeof noopValue === 'object') ? noopValue as Record<string, unknown> : undefined,
-          );
-        }
-      }
-    }
 
     for (const plugin of plugins) {
       try {
         const result = plugin.setup(noopCtx);
-        mergeNamespaceNoop(
+        mergePluginMethods(
           this as unknown as Record<string, unknown>,
           result.methods as Record<string, unknown>,
+          this,
+          plugin.name,
+          noopLogger,
           result.noopMethods as Record<string, unknown> | undefined,
         );
         // Do NOT register onFlush/onClose hooks — NoopTrace never flushes

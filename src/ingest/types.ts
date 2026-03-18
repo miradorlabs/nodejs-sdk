@@ -77,7 +77,7 @@ export interface TraceEvent {
   eventName: string;
   details?: string;
   timestamp: Date;
-  severity?: import('@miradorlabs/plugins').Severity;
+  severity?: Severity;
 }
 
 /**
