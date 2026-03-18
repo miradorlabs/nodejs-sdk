@@ -25,7 +25,7 @@ export {
 /** Options for the MiradorProvider wrapper */
 export interface MiradorProviderOptions {
   /** Bind to an existing trace instead of auto-creating per tx */
-  trace?: unknown;
+  trace?: import('./trace').Trace;
   /** Trace options for auto-created traces (ignored if trace is provided) */
   traceOptions?: TraceOptions;
 }
