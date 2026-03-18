@@ -8,6 +8,7 @@ import type { Logger } from '@miradorlabs/plugins';
 // Re-export shared types from plugins package
 export {
   Chain,
+  Severity,
   type ChainName,
   type ChainInput,
   type EIP1193Provider,
@@ -76,6 +77,7 @@ export interface TraceEvent {
   eventName: string;
   details?: string;
   timestamp: Date;
+  severity?: import('@miradorlabs/plugins').Severity;
 }
 
 /**

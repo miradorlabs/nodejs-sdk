@@ -43,8 +43,8 @@ const trace = client.trace({ name: 'SwapExecution' })
   .addAttribute('from', '0xabc...')
   .addAttribute('slippage', { bps: 50, tolerance: 'auto' })  // objects are stringified
   .addTags(['dex', 'swap'])
-  .addEvent('quote_received', { provider: 'Uniswap' })
-  .addEvent('transaction_signed')
+  .info('quote_received', { provider: 'Uniswap' })
+  .info('transaction_signed')
   .web3.evm.addTxHint('0xtxhash...', 'ethereum');
 // Data is auto-flushed at the end of the current JS tick.
 // Call trace.close() when the trace is complete.
@@ -154,27 +154,39 @@ trace.addTag('transaction')
      .addTags(['ethereum', 'send'])
 ```
 
-#### `addEvent(name, details?, options?)`
+#### `info(name, details?, options?)` / `warning(...)` / `error(...)`
 
-Add an event with optional details (string or object) and optional settings.
+Record an event with the corresponding severity level. All three share the same signature.
 
 ```typescript
-trace.addEvent('wallet_connected', { wallet: 'MetaMask' })
-     .addEvent('transaction_initiated')
-     .addEvent('transaction_confirmed', { blockNumber: 12345 })
+trace.info('wallet_connected', { wallet: 'MetaMask' })
+     .info('transaction_initiated')
+     .info('transaction_confirmed', { blockNumber: 12345 })
 
-// With stack trace - captures where in your code the event was added
-trace.addEvent('error_occurred', { code: 500 }, { captureStackTrace: true })
+trace.warning('rate_limit', 'approaching limit')
+
+trace.error('processing_failed', { code: 500 })
+
+// With stack trace capture
+trace.error('crash', { code: 500 }, { captureStackTrace: true })
+```
+
+| Parameter | Type               | Description                                      |
+|-----------|--------------------|--------------------------------------------------|
+| `name`    | `string`           | Event name                                       |
+| `details` | `string \| object` | Optional event details (objects are stringified) |
+| `options` | `object`           | Optional settings (e.g. `{ captureStackTrace: true }`) |
+
+#### `addEvent(name, details?, options?)`
+
+Low-level event method. Prefer `info()`, `warning()`, `error()` for clarity.
+
+```typescript
+trace.addEvent('custom_event', 'details', { severity: Severity.Warn })
 
 // Legacy: timestamp can still be passed as third parameter for backward compatibility
 trace.addEvent('custom_event', 'details', new Date())
 ```
-
-| Parameter | Type                       | Description                                         |
-|-----------|----------------------------|-----------------------------------------------------|
-| `name`    | `string`                   | Event name                                          |
-| `details` | `string \| object`         | Optional event details (objects are stringified)    |
-| `options` | `AddEventOptions \| Date`  | Options with `captureStackTrace`, or legacy Date    |
 
 #### `addStackTrace(eventName?, additionalDetails?)`
 
@@ -299,7 +311,7 @@ Send pending data to the gateway. Fire-and-forget — returns immediately but ma
 Each flush sends `FlushTrace` (an idempotent create-or-update RPC).
 
 ```typescript
-trace.addEvent('important_milestone');
+trace.info('important_milestone');
 trace.flush();  // Send immediately
 ```
 
@@ -434,16 +446,16 @@ async function trackSwapExecution(userAddress: string, txHash: string) {
       deadline: Math.floor(Date.now() / 1000) + 300,
     })
     .addTags(['swap', 'dex', 'ethereum'])
-    .addEvent('quote_requested')
-    .addEvent('quote_received', { price: 2500.50, provider: 'Uniswap' });
+    .info('quote_requested')
+    .info('quote_received', { price: 2500.50, provider: 'Uniswap' });
   // → FlushTrace auto-sent at end of current JS tick
 
   try {
     await processTransaction();
 
     // Add more data — auto-flushed via FlushTrace
-    trace.addEvent('transaction_signed')
-         .addEvent('transaction_confirmed', { blockNumber: 12345678 })
+    trace.info('transaction_signed')
+         .info('transaction_confirmed', { blockNumber: 12345678 })
          .web3.evm.addTxHint(txHash, 'ethereum', 'Swap transaction');
 
     // Close the trace when done (flushes pending data first)
@@ -480,17 +492,17 @@ async function sendTracedTransaction() {
       data: '0x38ed1739000000000000000000000000...', // encoded swap calldata
     });
 
-    trace.addEvent('transaction_sent', { txHash: tx.hash })
+    trace.info('transaction_sent', { txHash: tx.hash })
          .web3.evm.addTxHint(tx.hash, 'ethereum')
          .web3.evm.addInputData(tx.data);  // record the calldata for debugging
     // → auto-flushed
 
     const receipt = await tx.wait();
 
-    trace.addEvent('transaction_confirmed', { blockNumber: receipt.blockNumber });
+    trace.info('transaction_confirmed', { blockNumber: receipt.blockNumber });
     await trace.close('Swap completed');
   } catch (error) {
-    trace.addEvent('transaction_failed', { error: error.message });
+    trace.error('transaction_failed', { error: error.message });
     await trace.close('Swap failed');
   }
 }
@@ -531,17 +543,17 @@ async function sendTracedTransaction() {
       data: calldata,
     });
 
-    trace.addEvent('transaction_sent', { txHash: hash })
+    trace.info('transaction_sent', { txHash: hash })
          .web3.evm.addTxHint(hash, 'ethereum')
          .web3.evm.addInputData(calldata);  // record the calldata for debugging
     // → auto-flushed
 
     const receipt = await publicClient.waitForTransactionReceipt({ hash });
 
-    trace.addEvent('transaction_confirmed', { blockNumber: Number(receipt.blockNumber) });
+    trace.info('transaction_confirmed', { blockNumber: Number(receipt.blockNumber) });
     await trace.close('Transfer completed');
   } catch (error) {
-    trace.addEvent('transaction_failed', { error: error.message });
+    trace.error('transaction_failed', { error: error.message });
     await trace.close('Transfer failed');
   }
 }
@@ -674,7 +686,8 @@ import {
   // Types
   ClientOptions,
   TraceOptions,             // { name?, traceId?, captureStackTrace?, maxRetries?, retryBackoff?, ... }
-  AddEventOptions,          // { captureStackTrace?: boolean }
+  Severity,                 // Info, Warn, Error
+  AddEventOptions,          // { captureStackTrace?: boolean, severity?: Severity } (for addEvent)
   StackFrame,               // { functionName, fileName, lineNumber, columnNumber }
   StackTrace,               // { frames: StackFrame[], raw: string }
   ChainName,                // 'ethereum' | 'polygon' | 'arbitrum' | 'base' | 'optimism' | 'bsc'

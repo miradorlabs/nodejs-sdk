@@ -11,7 +11,7 @@ export { MiradorProvider } from './provider';
 export { captureStackTrace, formatStackTrace, formatStackTraceReadable } from './stacktrace';
 
 // Plugin system + shared types (re-exported from @miradorlabs/plugins)
-export { Web3Plugin, toChain, Chain, HintType } from '@miradorlabs/plugins';
+export { Web3Plugin, toChain, Chain, Severity, HintType } from '@miradorlabs/plugins';
 export type {
   Web3PluginOptions,
   Web3Methods,

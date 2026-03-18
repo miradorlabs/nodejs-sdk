@@ -15,10 +15,23 @@ import {
 } from 'mirador-gateway-ingest/proto/gateway/ingest/v1/ingest_gateway';
 import { ResponseStatus_StatusCode } from 'mirador-gateway-ingest/proto/gateway/common/v1/status';
 import type { TraceEvent, StackTrace, TraceCallbacks } from './types';
+import { Severity } from '@miradorlabs/plugins';
 import type { AddEventOptions, Logger } from '@miradorlabs/plugins';
 import type { MiradorPlugin, TraceContext, FlushBuilder } from '@miradorlabs/plugins';
 import { captureStackTrace, formatStackTrace } from './stacktrace';
 import { HINT_SERIALIZERS } from './hint-serializers';
+
+/** Map plugins Severity to proto Event_Severity */
+const SEVERITY_MAP: Record<number, Event_Severity> = {
+  [Severity.Info]: Event_Severity.SEVERITY_INFO,
+  [Severity.Warn]: Event_Severity.SEVERITY_WARN,
+  [Severity.Error]: Event_Severity.SEVERITY_ERROR,
+};
+
+function toProtoSeverity(severity?: Severity): Event_Severity {
+  if (severity === undefined) return Event_Severity.SEVERITY_INFO;
+  return SEVERITY_MAP[severity] ?? Event_Severity.SEVERITY_INFO;
+}
 
 /** Options passed to Trace constructor (with defaults applied) */
 interface ResolvedTraceOptions {
@@ -402,9 +415,40 @@ export class Trace {
       eventName,
       details: finalDetails,
       timestamp: timestamp || new Date(),
+      severity: eventOptions?.severity,
     });
     this.scheduleFlush();
     return this;
+  }
+
+  /**
+   * Record an info-level event.
+   * @param name Event name
+   * @param details Optional details (string or object)
+   * @param options Optional settings (e.g. captureStackTrace)
+   */
+  info(name: string, details?: string | object, options?: Omit<AddEventOptions, 'severity'>): this {
+    return this.addEvent(name, details, { ...options, severity: Severity.Info });
+  }
+
+  /**
+   * Record a warning-level event.
+   * @param name Event name
+   * @param details Optional details (string or object)
+   * @param options Optional settings (e.g. captureStackTrace)
+   */
+  warning(name: string, details?: string | object, options?: Omit<AddEventOptions, 'severity'>): this {
+    return this.addEvent(name, details, { ...options, severity: Severity.Warn });
+  }
+
+  /**
+   * Record an error-level event.
+   * @param name Event name
+   * @param details Optional details (string or object)
+   * @param options Optional settings (e.g. captureStackTrace)
+   */
+  error(name: string, details?: string | object, options?: Omit<AddEventOptions, 'severity'>): this {
+    return this.addEvent(name, details, { ...options, severity: Severity.Error });
   }
 
   /**
@@ -722,7 +766,7 @@ export class Trace {
         name: e.eventName,
         details: e.details,
         timestamp: e.timestamp,
-        severity: Event_Severity.SEVERITY_INFO,
+        severity: toProtoSeverity(e.severity),
       })),
       plugins: [],
     };
@@ -761,7 +805,7 @@ export class Trace {
           name: event.name,
           details: event.details,
           timestamp: event.timestamp,
-          severity: Event_Severity.SEVERITY_INFO,
+          severity: toProtoSeverity(event.severity),
         });
       },
       addAttribute(key, value) {
