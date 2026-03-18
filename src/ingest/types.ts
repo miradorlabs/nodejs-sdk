@@ -6,17 +6,19 @@
 import type { Logger } from '@miradorlabs/plugins';
 
 // Re-export shared types from plugins package
-export type {
-  EIP1193Provider,
-  TxHintOptions,
-  TransactionLike,
-  TransactionRequest,
-  Logger,
-  ChainName,
-  TxHashHint,
-  SafeMsgHintData,
-  SafeTxHintData,
-  AddEventOptions,
+export {
+  Chain,
+  type ChainName,
+  type ChainInput,
+  type EIP1193Provider,
+  type TxHintOptions,
+  type TransactionLike,
+  type TransactionRequest,
+  type Logger,
+  type TxHashHint,
+  type SafeMsgHintData,
+  type SafeTxHintData,
+  type AddEventOptions,
 } from '@miradorlabs/plugins';
 
 /** Options for the MiradorProvider wrapper */

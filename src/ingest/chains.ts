@@ -1,17 +1,17 @@
 /**
- * Chain name to proto enum mapping (SDK-specific, depends on proto package)
+ * Plugin Chain enum to proto Chain enum mapping (SDK-specific, depends on proto package)
  */
-import { Chain } from 'mirador-gateway-ingest/proto/gateway/ingest/v1/ingest_gateway';
-import type { ChainName } from '@miradorlabs/plugins';
+import { Chain as ProtoChain } from 'mirador-gateway-ingest/proto/gateway/ingest/v1/ingest_gateway';
+import { Chain } from '@miradorlabs/plugins';
 
 /**
- * Maps chain names to proto Chain enum values
+ * Maps plugin Chain enum values to proto Chain enum values
  */
-export const CHAIN_MAP: Record<ChainName, Chain> = {
-  ethereum: Chain.CHAIN_ETHEREUM,
-  polygon: Chain.CHAIN_POLYGON,
-  arbitrum: Chain.CHAIN_ARBITRUM,
-  base: Chain.CHAIN_BASE,
-  optimism: Chain.CHAIN_OPTIMISM,
-  bsc: Chain.CHAIN_BSC,
+export const CHAIN_MAP: Record<Chain, ProtoChain> = {
+  [Chain.Ethereum]: ProtoChain.CHAIN_ETHEREUM,
+  [Chain.Polygon]: ProtoChain.CHAIN_POLYGON,
+  [Chain.Arbitrum]: ProtoChain.CHAIN_ARBITRUM,
+  [Chain.Base]: ProtoChain.CHAIN_BASE,
+  [Chain.Optimism]: ProtoChain.CHAIN_OPTIMISM,
+  [Chain.BSC]: ProtoChain.CHAIN_BSC,
 };

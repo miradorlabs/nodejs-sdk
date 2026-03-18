@@ -1,9 +1,10 @@
 // Mirador Client Unit Tests
-import { Client, Trace, NoopTrace, ChainName, captureStackTrace, chainIdToName, MiradorProvider, Web3Plugin } from '../src/ingest';
+import { Client, Trace, NoopTrace, Chain, captureStackTrace, toChain, MiradorProvider, Web3Plugin } from '../src/ingest';
+import type { ChainName } from '../src/ingest';
 import type { StackTrace, EIP1193Provider, Logger, TraceCallbacks } from '../src/ingest';
 import { NodeGrpcRpc } from '../src/grpc';
 import * as apiGateway from "mirador-gateway-ingest/proto/gateway/ingest/v1/ingest_gateway";
-import { Chain } from "mirador-gateway-ingest/proto/gateway/ingest/v1/ingest_gateway";
+import { Chain as ProtoChain } from "mirador-gateway-ingest/proto/gateway/ingest/v1/ingest_gateway";
 import { ResponseStatus_StatusCode } from "mirador-gateway-ingest/proto/gateway/common/v1/status";
 
 // Mock the NodeGrpcRpc class
@@ -297,7 +298,7 @@ describe('Client', () => {
       const txHashHints = calls.data?.txHashHints;
       expect(txHashHints).toHaveLength(1);
       expect(txHashHints?.[0]?.txHash).toBe('0x123...');
-      expect(txHashHints?.[0]?.chain).toBe(Chain.CHAIN_ETHEREUM);
+      expect(txHashHints?.[0]?.chain).toBe(ProtoChain.CHAIN_ETHEREUM);
       expect(txHashHints?.[0]?.details).toBe('Swap transaction');
       expect(txHashHints?.[0]?.timestamp).toBeInstanceOf(Date);
     });
@@ -322,7 +323,7 @@ describe('Client', () => {
       await flushPromises();
 
       let calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
-      expect(calls.data?.txHashHints?.[0]?.chain).toBe(Chain.CHAIN_POLYGON);
+      expect(calls.data?.txHashHints?.[0]?.chain).toBe(ProtoChain.CHAIN_POLYGON);
 
       // Test arbitrum
       mockApiGatewayClient.FlushTrace.mockClear();
@@ -333,7 +334,7 @@ describe('Client', () => {
       await flushPromises();
 
       calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
-      expect(calls.data?.txHashHints?.[0]?.chain).toBe(Chain.CHAIN_ARBITRUM);
+      expect(calls.data?.txHashHints?.[0]?.chain).toBe(ProtoChain.CHAIN_ARBITRUM);
 
       // Test base
       mockApiGatewayClient.FlushTrace.mockClear();
@@ -344,7 +345,7 @@ describe('Client', () => {
       await flushPromises();
 
       calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
-      expect(calls.data?.txHashHints?.[0]?.chain).toBe(Chain.CHAIN_BASE);
+      expect(calls.data?.txHashHints?.[0]?.chain).toBe(ProtoChain.CHAIN_BASE);
 
       // Test optimism
       mockApiGatewayClient.FlushTrace.mockClear();
@@ -355,7 +356,7 @@ describe('Client', () => {
       await flushPromises();
 
       calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
-      expect(calls.data?.txHashHints?.[0]?.chain).toBe(Chain.CHAIN_OPTIMISM);
+      expect(calls.data?.txHashHints?.[0]?.chain).toBe(ProtoChain.CHAIN_OPTIMISM);
 
       // Test bsc
       mockApiGatewayClient.FlushTrace.mockClear();
@@ -366,7 +367,7 @@ describe('Client', () => {
       await flushPromises();
 
       calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
-      expect(calls.data?.txHashHints?.[0]?.chain).toBe(Chain.CHAIN_BSC);
+      expect(calls.data?.txHashHints?.[0]?.chain).toBe(ProtoChain.CHAIN_BSC);
     });
 
     it('should flush without txHashHint when not set', async () => {
@@ -430,7 +431,7 @@ describe('Client', () => {
       expect(calls.data?.tags?.[0]?.tags).toEqual(['dex', 'swap']);
       expect(calls.data?.events).toHaveLength(3);
       expect(calls.data?.txHashHints?.[0]?.txHash).toBe('0x123...');
-      expect(calls.data?.txHashHints?.[0]?.chain).toBe(Chain.CHAIN_ETHEREUM);
+      expect(calls.data?.txHashHints?.[0]?.chain).toBe(ProtoChain.CHAIN_ETHEREUM);
     });
 
     it('should log error when flush receives error status', async () => {
@@ -539,13 +540,13 @@ describe('Client', () => {
       const chainNames: ChainName[] = ['ethereum', 'polygon', 'arbitrum', 'base', 'optimism', 'bsc'];
 
       // Expected Chain enum values for each chain name
-      const expectedChainEnums: Record<ChainName, Chain> = {
-        ethereum: Chain.CHAIN_ETHEREUM,
-        polygon: Chain.CHAIN_POLYGON,
-        arbitrum: Chain.CHAIN_ARBITRUM,
-        base: Chain.CHAIN_BASE,
-        optimism: Chain.CHAIN_OPTIMISM,
-        bsc: Chain.CHAIN_BSC,
+      const expectedChainEnums: Record<ChainName, ProtoChain> = {
+        ethereum: ProtoChain.CHAIN_ETHEREUM,
+        polygon: ProtoChain.CHAIN_POLYGON,
+        arbitrum: ProtoChain.CHAIN_ARBITRUM,
+        base: ProtoChain.CHAIN_BASE,
+        optimism: ProtoChain.CHAIN_OPTIMISM,
+        bsc: ProtoChain.CHAIN_BSC,
       };
 
       for (const chainName of chainNames) {
@@ -1002,7 +1003,7 @@ describe('Client', () => {
       const safeMsgHints = calls.data?.safeMsgHints;
       expect(safeMsgHints).toHaveLength(1);
       expect(safeMsgHints?.[0]?.messageHash).toBe('0xmsgHash123');
-      expect(safeMsgHints?.[0]?.chain).toBe(Chain.CHAIN_ETHEREUM);
+      expect(safeMsgHints?.[0]?.chain).toBe(ProtoChain.CHAIN_ETHEREUM);
       expect(safeMsgHints?.[0]?.timestamp).toBeInstanceOf(Date);
     });
 
@@ -1023,7 +1024,7 @@ describe('Client', () => {
       const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
       const safeMsgHints = calls.data?.safeMsgHints;
       expect(safeMsgHints?.[0]?.messageHash).toBe('0xmsgHash456');
-      expect(safeMsgHints?.[0]?.chain).toBe(Chain.CHAIN_POLYGON);
+      expect(safeMsgHints?.[0]?.chain).toBe(ProtoChain.CHAIN_POLYGON);
       expect(safeMsgHints?.[0]?.details).toBe('multisig approval');
     });
 
@@ -1046,9 +1047,9 @@ describe('Client', () => {
       const safeMsgHints = calls.data?.safeMsgHints;
       expect(safeMsgHints).toHaveLength(2);
       expect(safeMsgHints?.[0]?.messageHash).toBe('0xmsg1');
-      expect(safeMsgHints?.[0]?.chain).toBe(Chain.CHAIN_ETHEREUM);
+      expect(safeMsgHints?.[0]?.chain).toBe(ProtoChain.CHAIN_ETHEREUM);
       expect(safeMsgHints?.[1]?.messageHash).toBe('0xmsg2');
-      expect(safeMsgHints?.[1]?.chain).toBe(Chain.CHAIN_BASE);
+      expect(safeMsgHints?.[1]?.chain).toBe(ProtoChain.CHAIN_BASE);
       expect(safeMsgHints?.[1]?.details).toBe('second hint');
     });
 
@@ -1060,13 +1061,13 @@ describe('Client', () => {
       };
       mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
 
-      const chainTests: Array<{ chain: ChainName; expected: Chain }> = [
-        { chain: 'ethereum', expected: Chain.CHAIN_ETHEREUM },
-        { chain: 'polygon', expected: Chain.CHAIN_POLYGON },
-        { chain: 'arbitrum', expected: Chain.CHAIN_ARBITRUM },
-        { chain: 'base', expected: Chain.CHAIN_BASE },
-        { chain: 'optimism', expected: Chain.CHAIN_OPTIMISM },
-        { chain: 'bsc', expected: Chain.CHAIN_BSC },
+      const chainTests: Array<{ chain: ChainName; expected: ProtoChain }> = [
+        { chain: 'ethereum', expected: ProtoChain.CHAIN_ETHEREUM },
+        { chain: 'polygon', expected: ProtoChain.CHAIN_POLYGON },
+        { chain: 'arbitrum', expected: ProtoChain.CHAIN_ARBITRUM },
+        { chain: 'base', expected: ProtoChain.CHAIN_BASE },
+        { chain: 'optimism', expected: ProtoChain.CHAIN_OPTIMISM },
+        { chain: 'bsc', expected: ProtoChain.CHAIN_BSC },
       ];
 
       for (const { chain, expected } of chainTests) {
@@ -1134,7 +1135,7 @@ describe('Client', () => {
     });
   });
 
-  describe('web3.safe.addSafeTxHint', () => {
+  describe('web3.safe.addTxHint', () => {
     it('should add a safe transaction hint with chain and safeTxHash', async () => {
       const mockResponse: apiGateway.FlushTraceResponse = {
         status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
@@ -1144,7 +1145,7 @@ describe('Client', () => {
       mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
 
       client.trace({ name: 'test', captureStackTrace: false })
-        .web3.safe.addSafeTxHint('0xsafeTxHash123', 'ethereum')
+        .web3.safe.addTxHint('0xsafeTxHash123', 'ethereum')
         .flush();
       await flushMicrotasks();
       await flushPromises();
@@ -1153,7 +1154,7 @@ describe('Client', () => {
       const safeTxHints = calls.data?.safeTxHints;
       expect(safeTxHints).toHaveLength(1);
       expect(safeTxHints?.[0]?.safeTxHash).toBe('0xsafeTxHash123');
-      expect(safeTxHints?.[0]?.chain).toBe(Chain.CHAIN_ETHEREUM);
+      expect(safeTxHints?.[0]?.chain).toBe(ProtoChain.CHAIN_ETHEREUM);
       expect(safeTxHints?.[0]?.timestamp).toBeInstanceOf(Date);
     });
 
@@ -1166,7 +1167,7 @@ describe('Client', () => {
       mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
 
       client.trace({ name: 'test', captureStackTrace: false })
-        .web3.safe.addSafeTxHint('0xsafeTxHash456', 'polygon', 'multisig execution')
+        .web3.safe.addTxHint('0xsafeTxHash456', 'polygon', 'multisig execution')
         .flush();
       await flushMicrotasks();
       await flushPromises();
@@ -1174,7 +1175,7 @@ describe('Client', () => {
       const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
       const safeTxHints = calls.data?.safeTxHints;
       expect(safeTxHints?.[0]?.safeTxHash).toBe('0xsafeTxHash456');
-      expect(safeTxHints?.[0]?.chain).toBe(Chain.CHAIN_POLYGON);
+      expect(safeTxHints?.[0]?.chain).toBe(ProtoChain.CHAIN_POLYGON);
       expect(safeTxHints?.[0]?.details).toBe('multisig execution');
     });
 
@@ -1187,8 +1188,8 @@ describe('Client', () => {
       mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
 
       client.trace({ name: 'test', captureStackTrace: false })
-        .web3.safe.addSafeTxHint('0xsafetx1', 'ethereum')
-        .web3.safe.addSafeTxHint('0xsafetx2', 'base', 'second hint')
+        .web3.safe.addTxHint('0xsafetx1', 'ethereum')
+        .web3.safe.addTxHint('0xsafetx2', 'base', 'second hint')
         .flush();
       await flushMicrotasks();
       await flushPromises();
@@ -1197,9 +1198,9 @@ describe('Client', () => {
       const safeTxHints = calls.data?.safeTxHints;
       expect(safeTxHints).toHaveLength(2);
       expect(safeTxHints?.[0]?.safeTxHash).toBe('0xsafetx1');
-      expect(safeTxHints?.[0]?.chain).toBe(Chain.CHAIN_ETHEREUM);
+      expect(safeTxHints?.[0]?.chain).toBe(ProtoChain.CHAIN_ETHEREUM);
       expect(safeTxHints?.[1]?.safeTxHash).toBe('0xsafetx2');
-      expect(safeTxHints?.[1]?.chain).toBe(Chain.CHAIN_BASE);
+      expect(safeTxHints?.[1]?.chain).toBe(ProtoChain.CHAIN_BASE);
       expect(safeTxHints?.[1]?.details).toBe('second hint');
     });
 
@@ -1211,13 +1212,13 @@ describe('Client', () => {
       };
       mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
 
-      const chainTests: Array<{ chain: ChainName; expected: Chain }> = [
-        { chain: 'ethereum', expected: Chain.CHAIN_ETHEREUM },
-        { chain: 'polygon', expected: Chain.CHAIN_POLYGON },
-        { chain: 'arbitrum', expected: Chain.CHAIN_ARBITRUM },
-        { chain: 'base', expected: Chain.CHAIN_BASE },
-        { chain: 'optimism', expected: Chain.CHAIN_OPTIMISM },
-        { chain: 'bsc', expected: Chain.CHAIN_BSC },
+      const chainTests: Array<{ chain: ChainName; expected: ProtoChain }> = [
+        { chain: 'ethereum', expected: ProtoChain.CHAIN_ETHEREUM },
+        { chain: 'polygon', expected: ProtoChain.CHAIN_POLYGON },
+        { chain: 'arbitrum', expected: ProtoChain.CHAIN_ARBITRUM },
+        { chain: 'base', expected: ProtoChain.CHAIN_BASE },
+        { chain: 'optimism', expected: ProtoChain.CHAIN_OPTIMISM },
+        { chain: 'bsc', expected: ProtoChain.CHAIN_BSC },
       ];
 
       for (const { chain, expected } of chainTests) {
@@ -1225,7 +1226,7 @@ describe('Client', () => {
         mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
 
         client.trace({ name: 'test', captureStackTrace: false })
-          .web3.safe.addSafeTxHint('0xsafetx', chain)
+          .web3.safe.addTxHint('0xsafetx', chain)
           .flush();
         await flushMicrotasks();
         await flushPromises();
@@ -1249,13 +1250,13 @@ describe('Client', () => {
       await flushPromises();
       await trace.close();
 
-      trace.web3.safe.addSafeTxHint('0xsafetx', 'ethereum');
-      expect(console.warn).toHaveBeenCalledWith('[Web3Plugin] Trace is closed, ignoring addSafeTxHint');
+      trace.web3.safe.addTxHint('0xsafetx', 'ethereum');
+      expect(console.warn).toHaveBeenCalledWith('[Web3Plugin] Trace is closed, ignoring addTxHint');
     });
 
     it('should return this for chaining', () => {
       const trace = client.trace({ name: 'test', captureStackTrace: false });
-      const result = trace.web3.safe.addSafeTxHint('0xsafetx', 'ethereum');
+      const result = trace.web3.safe.addTxHint('0xsafetx', 'ethereum');
       expect(result).toBe(trace);
     });
 
@@ -1273,7 +1274,7 @@ describe('Client', () => {
         .addEvent('executing', 'token transfer')
         .web3.evm.addTxHint('0xtx123', 'ethereum')
         .web3.safe.addMsgHint('0xmsg123', 'ethereum', 'approval')
-        .web3.safe.addSafeTxHint('0xsafetx123', 'ethereum', 'execution')
+        .web3.safe.addTxHint('0xsafetx123', 'ethereum', 'execution')
         .flush();
       await flushMicrotasks();
       await flushPromises();
@@ -1304,7 +1305,7 @@ describe('Client', () => {
 
       const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
       expect(calls.data?.txHashHints?.[0]?.txHash).toBe('0xabc');
-      expect(calls.data?.txHashHints?.[0]?.chain).toBe(Chain.CHAIN_ETHEREUM);
+      expect(calls.data?.txHashHints?.[0]?.chain).toBe(ProtoChain.CHAIN_ETHEREUM);
     });
 
     it('should extract input data from tx.data', async () => {
@@ -1342,7 +1343,7 @@ describe('Client', () => {
       await flushPromises();
 
       const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
-      expect(calls.data?.txHashHints?.[0]?.chain).toBe(Chain.CHAIN_POLYGON);
+      expect(calls.data?.txHashHints?.[0]?.chain).toBe(ProtoChain.CHAIN_POLYGON);
       const inputEvent = calls.data?.events?.find((e: { name?: string }) => e.name === 'Tx input data');
       expect(inputEvent).toBeDefined();
       expect(inputEvent?.details).toBe('0xdeadbeef');
@@ -1363,7 +1364,7 @@ describe('Client', () => {
       await flushPromises();
 
       const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
-      expect(calls.data?.txHashHints?.[0]?.chain).toBe(Chain.CHAIN_POLYGON);
+      expect(calls.data?.txHashHints?.[0]?.chain).toBe(ProtoChain.CHAIN_POLYGON);
     });
 
     it('should return this for chaining', () => {
@@ -1394,7 +1395,7 @@ describe('Client', () => {
       const trace = client.trace({ name: 'test' });
       trace.web3.evm.setProvider(mockProvider);
       await new Promise(r => setTimeout(r, 0));
-      expect(trace.web3.evm.getProviderChain()).toBe('ethereum');
+      expect(trace.web3.evm.getProviderChain()).toBe(Chain.Ethereum);
     });
 
     it('sendTransaction should send tx and return hash', async () => {
@@ -1460,12 +1461,12 @@ describe('Client', () => {
   describe('resolveChain', () => {
     it('should prefer explicit chain parameter', () => {
       const trace = client.trace({ name: 'test' });
-      expect(trace.web3.evm.resolveChain('polygon', 1)).toBe('polygon');
+      expect(trace.web3.evm.resolveChain('polygon', 1)).toBe(Chain.Polygon);
     });
 
     it('should fall back to chainId', () => {
       const trace = client.trace({ name: 'test' });
-      expect(trace.web3.evm.resolveChain(undefined, 137)).toBe('polygon');
+      expect(trace.web3.evm.resolveChain(undefined, 137)).toBe(Chain.Polygon);
     });
 
     it('should fall back to provider chain', async () => {
@@ -1475,7 +1476,7 @@ describe('Client', () => {
       const trace = client.trace({ name: 'test' });
       trace.web3.evm.setProvider(mockProvider);
       await new Promise(r => setTimeout(r, 0));
-      expect(trace.web3.evm.resolveChain()).toBe('ethereum');
+      expect(trace.web3.evm.resolveChain()).toBe(Chain.Ethereum);
     });
 
     it('should throw if chain cannot be determined', () => {
@@ -1526,7 +1527,7 @@ describe('Client', () => {
 
       const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
       expect(calls.data?.txHashHints?.[0]?.txHash).toBe('0xhash');
-      expect(calls.data?.txHashHints?.[0]?.chain).toBe(Chain.CHAIN_ETHEREUM);
+      expect(calls.data?.txHashHints?.[0]?.chain).toBe(ProtoChain.CHAIN_ETHEREUM);
       expect(calls.data?.txHashHints?.[0]?.details).toBeUndefined();
     });
 
@@ -1550,7 +1551,7 @@ describe('Client', () => {
 
       const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
       expect(calls.data?.txHashHints?.[0]?.txHash).toBe('0xhash');
-      expect(calls.data?.txHashHints?.[0]?.chain).toBe(Chain.CHAIN_BASE);
+      expect(calls.data?.txHashHints?.[0]?.chain).toBe(ProtoChain.CHAIN_BASE);
       expect(calls.data?.txHashHints?.[0]?.details).toBeUndefined();
     });
 
@@ -1604,7 +1605,7 @@ describe('Client', () => {
 
       // Verify tx hints with raw string details
       expect(calls.data?.txHashHints?.[0]?.txHash).toBe('0xhash');
-      expect(calls.data?.txHashHints?.[0]?.chain).toBe(Chain.CHAIN_ETHEREUM);
+      expect(calls.data?.txHashHints?.[0]?.chain).toBe(ProtoChain.CHAIN_ETHEREUM);
       expect(calls.data?.txHashHints?.[0]?.details).toBe('swap tx');
     });
 
@@ -1703,7 +1704,7 @@ describe('Client', () => {
 
       const trace = c.trace({ captureStackTrace: false });
       await new Promise(r => setTimeout(r, 0));
-      expect(trace.web3.evm.getProviderChain()).toBe('ethereum');
+      expect(trace.web3.evm.getProviderChain()).toBe(Chain.Ethereum);
     });
 
     it('should allow setProvider to override Web3Plugin provider', async () => {
@@ -1715,11 +1716,11 @@ describe('Client', () => {
 
       const trace = c.trace({ captureStackTrace: false });
       await new Promise(r => setTimeout(r, 0));
-      expect(trace.web3.evm.getProviderChain()).toBe('polygon');
+      expect(trace.web3.evm.getProviderChain()).toBe(Chain.Polygon);
 
       trace.web3.evm.setProvider(ethProvider);
       await new Promise(r => setTimeout(r, 0));
-      expect(trace.web3.evm.getProviderChain()).toBe('ethereum');
+      expect(trace.web3.evm.getProviderChain()).toBe(Chain.Ethereum);
     });
 
     it('should handle setProvider with failing eth_chainId', async () => {
@@ -2032,7 +2033,7 @@ describe('Client', () => {
       const updateCall = (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).FlushTrace.mock.calls[0][0];
       expect(updateCall.data?.txHashHints).toHaveLength(1);
       expect(updateCall.data?.txHashHints?.[0]?.txHash).toBe('0xhash123');
-      expect(updateCall.data?.txHashHints?.[0]?.chain).toBe(Chain.CHAIN_ETHEREUM);
+      expect(updateCall.data?.txHashHints?.[0]?.chain).toBe(ProtoChain.CHAIN_ETHEREUM);
       expect(updateCall.data?.txHashHints?.[0]?.details).toBe('swap tx');
     });
 
@@ -2054,7 +2055,7 @@ describe('Client', () => {
       expect(updateCall.data?.tags?.[0]?.tags).toEqual(['dex']);
       expect(updateCall.data?.events?.map((e: { name?: string }) => e.name)).toContain('started');
       expect(updateCall.data?.events?.map((e: { name?: string }) => e.name)).toContain('Tx input data');
-      expect(updateCall.data?.txHashHints?.[0]?.chain).toBe(Chain.CHAIN_POLYGON);
+      expect(updateCall.data?.txHashHints?.[0]?.chain).toBe(ProtoChain.CHAIN_POLYGON);
     });
 
     it('should start keep-alive after successful flush()', async () => {
@@ -2914,7 +2915,7 @@ describe('Client', () => {
       const n = noop as unknown as { web3: { evm: Record<string, (...args: unknown[]) => unknown>; safe: Record<string, (...args: unknown[]) => unknown> } };
       expect(n.web3.evm.addTxHint()).toBe(noop);
       expect(n.web3.safe.addMsgHint()).toBe(noop);
-      expect(n.web3.safe.addSafeTxHint()).toBe(noop);
+      expect(n.web3.safe.addTxHint()).toBe(noop);
       expect(n.web3.evm.addInputData()).toBe(noop);
       expect(n.web3.evm.addTx()).toBe(noop);
       expect(n.web3.evm.setProvider()).toBe(noop);
@@ -3186,30 +3187,30 @@ describe('Client', () => {
   });
 });
 
-describe('chainIdToName', () => {
+describe('toChain', () => {
   it('should map known chain IDs', () => {
-    expect(chainIdToName(1)).toBe('ethereum');
-    expect(chainIdToName(137)).toBe('polygon');
-    expect(chainIdToName(42161)).toBe('arbitrum');
-    expect(chainIdToName(8453)).toBe('base');
-    expect(chainIdToName(10)).toBe('optimism');
-    expect(chainIdToName(56)).toBe('bsc');
+    expect(toChain(1)).toBe(Chain.Ethereum);
+    expect(toChain(137)).toBe(Chain.Polygon);
+    expect(toChain(42161)).toBe(Chain.Arbitrum);
+    expect(toChain(8453)).toBe(Chain.Base);
+    expect(toChain(10)).toBe(Chain.Optimism);
+    expect(toChain(56)).toBe(Chain.BSC);
   });
 
   it('should return undefined for unknown chain IDs', () => {
-    expect(chainIdToName(999999)).toBeUndefined();
+    expect(toChain(999999)).toBeUndefined();
   });
 
   it('should handle bigint input', () => {
-    expect(chainIdToName(BigInt(1))).toBe('ethereum');
+    expect(toChain(BigInt(1))).toBe(Chain.Ethereum);
   });
 
   it('should handle string input', () => {
-    expect(chainIdToName('137')).toBe('polygon');
+    expect(toChain('137')).toBe(Chain.Polygon);
   });
 
   it('should handle hex string input', () => {
-    expect(chainIdToName('0x1')).toBe('ethereum');
+    expect(toChain('0x1')).toBe(Chain.Ethereum);
   });
 });
 

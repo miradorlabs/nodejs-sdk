@@ -8,7 +8,7 @@
  */
 
 import 'dotenv/config';
-import { Client, ChainName, Web3Plugin } from '../src/ingest';
+import { Client, Chain, Web3Plugin } from '../src/ingest';
 import type { MiradorPlugin, Web3Methods } from '../src/ingest';
 import * as readline from 'readline';
 
@@ -43,8 +43,16 @@ const log = {
   warn: (msg: string) => console.log(`${c.yellow}⚠ ${msg}${c.reset}`),
 };
 
-// Valid chains
-const VALID_CHAINS: ChainName[] = ['ethereum', 'polygon', 'arbitrum', 'base', 'optimism', 'bsc'];
+// Valid chain names (for CLI input validation)
+const VALID_CHAINS = ['ethereum', 'polygon', 'arbitrum', 'base', 'optimism', 'bsc'] as const;
+const CHAIN_NAME_TO_ENUM: Record<string, Chain> = {
+  ethereum: Chain.Ethereum,
+  polygon: Chain.Polygon,
+  arbitrum: Chain.Arbitrum,
+  base: Chain.Base,
+  optimism: Chain.Optimism,
+  bsc: Chain.BSC,
+};
 
 // Initialize client
 const client = new Client(API_KEY, { apiUrl: API_URL, useSsl: USE_SSL, plugins: [Web3Plugin()] });
@@ -129,11 +137,12 @@ function tx(hash: string, chain: string, details?: string) {
     log.info(`Chains: ${VALID_CHAINS.join(', ')}`);
     return;
   }
-  if (!VALID_CHAINS.includes(chain as ChainName)) {
+  const chainEnum = CHAIN_NAME_TO_ENUM[chain];
+  if (!chainEnum) {
     log.error(`Invalid chain. Use: ${VALID_CHAINS.join(', ')}`);
     return;
   }
-  currentTrace.web3.evm.addTxHint(hash, chain as ChainName, details);
+  currentTrace.web3.evm.addTxHint(hash, chainEnum, details);
   log.success(`Added tx hint: ${hash} on ${chain}`);
 }
 
@@ -147,11 +156,12 @@ function safemsg(msgHash: string, chain: string, details?: string) {
     log.info(`Chains: ${VALID_CHAINS.join(', ')}`);
     return;
   }
-  if (!VALID_CHAINS.includes(chain as ChainName)) {
+  const chainEnum = CHAIN_NAME_TO_ENUM[chain];
+  if (!chainEnum) {
     log.error(`Invalid chain. Use: ${VALID_CHAINS.join(', ')}`);
     return;
   }
-  currentTrace.web3.safe.addMsgHint(msgHash, chain as ChainName, details);
+  currentTrace.web3.safe.addMsgHint(msgHash, chainEnum, details);
   log.success(`Added safe msg hint: ${msgHash} on ${chain}`);
 }
 

@@ -4,7 +4,7 @@
  */
 import type { TraceData } from 'mirador-gateway-ingest/proto/gateway/ingest/v1/ingest_gateway';
 import { HintType } from '@miradorlabs/plugins';
-import type { HintDataMap, ChainName } from '@miradorlabs/plugins';
+import type { HintDataMap } from '@miradorlabs/plugins';
 import { CHAIN_MAP } from './chains';
 
 /** A function that serializes hint data into a TraceData object */
@@ -15,7 +15,7 @@ export const HINT_SERIALIZERS: Record<string, HintSerializer> = {
   [HintType.TX_HASH]: (traceData, data) => {
     const hint = data as unknown as HintDataMap[typeof HintType.TX_HASH];
     traceData.txHashHints!.push({
-      chain: CHAIN_MAP[hint.chain as ChainName],
+      chain: CHAIN_MAP[hint.chain],
       txHash: hint.txHash,
       details: hint.details,
       timestamp: hint.timestamp,
@@ -25,7 +25,7 @@ export const HINT_SERIALIZERS: Record<string, HintSerializer> = {
   [HintType.SAFE_MSG]: (traceData, data) => {
     const hint = data as unknown as HintDataMap[typeof HintType.SAFE_MSG];
     traceData.safeMsgHints!.push({
-      chain: CHAIN_MAP[hint.chain as ChainName],
+      chain: CHAIN_MAP[hint.chain],
       messageHash: hint.messageHash,
       details: hint.details,
       timestamp: hint.timestamp,
@@ -35,7 +35,7 @@ export const HINT_SERIALIZERS: Record<string, HintSerializer> = {
   [HintType.SAFE_TX]: (traceData, data) => {
     const hint = data as unknown as HintDataMap[typeof HintType.SAFE_TX];
     traceData.safeTxHints!.push({
-      chain: CHAIN_MAP[hint.chain as ChainName],
+      chain: CHAIN_MAP[hint.chain],
       safeTxHash: hint.safeTxHash,
       details: hint.details,
       timestamp: hint.timestamp,
