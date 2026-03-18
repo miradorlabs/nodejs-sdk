@@ -3,14 +3,15 @@
  * Supports auto-flush mode where SDK calls are batched via microtask and flushed
  * at the end of the current JS tick, or manual flush via flush().
  */
-import type {
-  FlushTraceRequest,
-  FlushTraceResponse,
-  KeepAliveRequest,
-  KeepAliveResponse,
-  CloseTraceRequest,
-  CloseTraceResponse,
-  TraceData,
+import {
+  Event_Severity,
+  type FlushTraceRequest,
+  type FlushTraceResponse,
+  type KeepAliveRequest,
+  type KeepAliveResponse,
+  type CloseTraceRequest,
+  type CloseTraceResponse,
+  type FlushTraceData,
 } from 'mirador-gateway-ingest/proto/gateway/ingest/v1/ingest_gateway';
 import { ResponseStatus_StatusCode } from 'mirador-gateway-ingest/proto/gateway/common/v1/status';
 import type { TraceEvent, StackTrace, TraceCallbacks } from './types';
@@ -507,7 +508,7 @@ export class Trace {
       const savedEvents = this.pendingEvents.slice(eventsToSend.length);
       this.pendingEvents = eventsToSend;
 
-      const traceData = this.buildTraceData();
+      const traceData = this.buildFlushTraceData();
       const itemCount = this.countItems(traceData);
       this.pendingAttributes = {};
       this.pendingTags = [];
@@ -515,7 +516,7 @@ export class Trace {
 
       this.enqueueFlush(traceData, itemCount);
     } else {
-      const traceData = this.buildTraceData();
+      const traceData = this.buildFlushTraceData();
       const itemCount = this.countItems(traceData);
       this.clearPending();
       this.enqueueFlush(traceData, itemCount);
@@ -527,13 +528,11 @@ export class Trace {
   }
 
   /**
-   * Count total items in a TraceData payload
+   * Count total items in a FlushTraceData payload
    */
-  private countItems(traceData: TraceData): number {
+  private countItems(traceData: FlushTraceData): number {
     return (traceData.events?.length ?? 0) +
-      (traceData.txHashHints?.length ?? 0) +
-      (traceData.safeMsgHints?.length ?? 0) +
-      (traceData.safeTxHints?.length ?? 0) +
+      (traceData.plugins?.length ?? 0) +
       (traceData.attributes?.length ?? 0) +
       (traceData.tags?.length ?? 0);
   }
@@ -541,7 +540,7 @@ export class Trace {
   /**
    * Enqueue a flush operation onto the flush queue for strict ordering.
    */
-  private enqueueFlush(traceData: TraceData, itemCount: number): void {
+  private enqueueFlush(traceData: FlushTraceData, itemCount: number): void {
     const traceName = this.name;
 
     this.flushQueue = this.flushQueue.then(async () => {
@@ -658,7 +657,7 @@ export class Trace {
   /**
    * Send FlushTrace request (idempotent create-or-update)
    */
-  private async flushTrace(traceData: TraceData, itemCount: number = 0): Promise<void> {
+  private async flushTrace(traceData: FlushTraceData, itemCount: number = 0): Promise<void> {
     const request: FlushTraceRequest = {
       traceId: this.traceId,
       name: this.name,
@@ -694,11 +693,11 @@ export class Trace {
   }
 
   /**
-   * Build the TraceData payload from pending data.
+   * Build the FlushTraceData payload from pending data.
    * Stack trace attributes are included on the first flush only.
    * Plugin onFlush hooks are called to contribute additional data.
    */
-  private buildTraceData(): TraceData {
+  private buildFlushTraceData(): FlushTraceData {
     const attributesToSend = { ...this.pendingAttributes };
 
     // Include stack trace attributes on the first flush only
@@ -712,7 +711,7 @@ export class Trace {
       }
     }
 
-    const traceData: TraceData = {
+    const traceData: FlushTraceData = {
       attributes: Object.keys(attributesToSend).length > 0
         ? [{ attributes: attributesToSend, timestamp: new Date() }]
         : [],
@@ -723,10 +722,9 @@ export class Trace {
         name: e.eventName,
         details: e.details,
         timestamp: e.timestamp,
+        severity: Event_Severity.SEVERITY_INFO,
       })),
-      txHashHints: [],
-      safeMsgHints: [],
-      safeTxHints: [],
+      plugins: [],
     };
 
     // Let plugins contribute data
@@ -745,9 +743,9 @@ export class Trace {
   }
 
   /**
-   * Create a FlushBuilder that populates the given TraceData with plugin contributions.
+   * Create a FlushBuilder that populates the given FlushTraceData with plugin contributions.
    */
-  private createFlushBuilder(traceData: TraceData): FlushBuilder {
+  private createFlushBuilder(traceData: FlushTraceData): FlushBuilder {
     const logger = this.client.logger;
     return {
       addHint(type: string, data: Record<string, unknown>) {
@@ -763,6 +761,7 @@ export class Trace {
           name: event.name,
           details: event.details,
           timestamp: event.timestamp,
+          severity: Event_Severity.SEVERITY_INFO,
         });
       },
       addAttribute(key, value) {
