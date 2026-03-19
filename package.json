@@ -59,7 +59,7 @@
     "typescript-eslint": "^8.47.0"
   },
   "dependencies": {
-    "@miradorlabs/plugins": "1.0.0",
+    "@miradorlabs/plugins": "1.0.1",
     "@grpc/grpc-js": "^1.14.1",
     "google-protobuf": "^4.0.1",
     "mirador-gateway-ingest": "https://storage.googleapis.com/mirador-shd-packages/gateway/ingest/nodejs/mirador-gateway-ingest-1.0.7.tgz",

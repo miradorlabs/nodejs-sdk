@@ -412,26 +412,16 @@ export class Trace {
    * @param options Optional settings including captureStackTrace
    * @returns This trace builder for chaining
    */
-  addEvent(eventName: string, details?: string | object, options?: AddEventOptions | Date): this {
+  addEvent(eventName: string, details?: string | object, options?: AddEventOptions): this {
     if (this.closed) {
       this.client.logger.warn('[MiradorTrace] Trace is closed, ignoring addEvent');
       return this;
     }
     if (this.isQueueFull()) return this;
 
-    // Handle backward compatibility: options can be a Date (legacy timestamp parameter)
-    let timestamp: Date | undefined;
-    let eventOptions: AddEventOptions | undefined;
-
-    if (options instanceof Date) {
-      timestamp = options;
-    } else {
-      eventOptions = options;
-    }
-
     // Build details object with optional stack trace
     let finalDetails: string | undefined;
-    if (eventOptions?.captureStackTrace) {
+    if (options?.captureStackTrace) {
       const stackTrace = captureStackTrace(1); // Skip 1 frame (this method)
       const detailsObj = typeof details === 'object' && details !== null
         ? details
@@ -455,8 +445,8 @@ export class Trace {
     this.pendingEvents.push({
       eventName,
       details: finalDetails,
-      timestamp: timestamp || new Date(),
-      severity: eventOptions?.severity,
+      timestamp: options?.timestamp || new Date(),
+      severity: options?.severity,
     });
     this.scheduleFlush();
     return this;
