@@ -242,8 +242,8 @@ describe('Client', () => {
       const timestamp2 = new Date('2024-01-01T00:00:05Z');
 
       client.trace({ name: 'test' })
-        .addEvent('event1', 'string details', timestamp1)
-        .addEvent('event2', { key: 'value', count: 42 }, timestamp2)
+        .addEvent('event1', 'string details', { timestamp: timestamp1 })
+        .addEvent('event2', { key: 'value', count: 42 }, { timestamp: timestamp2 })
         .addEvent('event3') // no details, auto timestamp
         .flush();
       await flushMicrotasks();
@@ -734,7 +734,7 @@ describe('Client', () => {
       expect(eventDetails.stackTrace).toBeDefined();
     });
 
-    it('should support legacy timestamp parameter for addEvent', async () => {
+    it('should support timestamp in options for addEvent', async () => {
       const mockResponse: apiGateway.FlushTraceResponse = {
         status: {
           code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS,
@@ -747,7 +747,7 @@ describe('Client', () => {
       const customTimestamp = new Date('2024-01-15T10:00:00Z');
 
       client.trace({ name: 'test' })
-        .addEvent('legacy_event', 'details', customTimestamp)
+        .addEvent('legacy_event', 'details', { timestamp: customTimestamp })
         .flush();
       await flushMicrotasks();
       await flushPromises();
