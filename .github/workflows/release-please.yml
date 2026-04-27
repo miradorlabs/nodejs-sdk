@@ -58,7 +58,7 @@ jobs:
 
       - name: Slack Notification - Success
         if: success()
-        uses: slackapi/slack-github-action@v2.1.1
+        uses: slackapi/slack-github-action@v3.0.2
         with:
           webhook: ${{ secrets.SLACK_WEBHOOK_ACTIONS }}
           webhook-type: incoming-webhook
@@ -109,7 +109,7 @@ jobs:
 
       - name: Slack Notification - Failure
         if: failure()
-        uses: slackapi/slack-github-action@v2.1.1
+        uses: slackapi/slack-github-action@v3.0.2
         with:
           webhook: ${{ secrets.SLACK_WEBHOOK_ACTIONS }}
           webhook-type: incoming-webhook
