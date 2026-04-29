@@ -1,6 +1,12 @@
 {
   "name": "@miradorlabs/nodejs-sdk",
   "version": "2.0.0",
+  "description": "Node.js SDK for Mirador — cross-chain observability for blockchain applications.",
+  "homepage": "https://mirador.org",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/miradorlabs/nodejs-sdk"
+  },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "publishConfig": {
@@ -30,7 +36,6 @@
   ],
   "author": "@mirador",
   "license": "MIT",
-  "description": "Mirador Ingest SDK for Node.js",
   "devDependencies": {
     "@commitlint/cli": "^20.4.1",
     "@commitlint/config-conventional": "^20.4.1",
