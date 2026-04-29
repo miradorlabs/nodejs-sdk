@@ -1,6 +1,6 @@
 {
   "name": "@miradorlabs/nodejs-sdk",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Node.js SDK for Mirador — cross-chain observability for blockchain applications.",
   "homepage": "https://mirador.org",
   "repository": {
