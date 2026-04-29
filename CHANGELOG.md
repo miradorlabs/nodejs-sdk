@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.0.1](https://github.com/miradorlabs/nodejs-sdk/compare/v2.0.0...v2.0.1) (2026-04-29)
+
+
+### Bug Fixes
+
+* trigger release ([112a670](https://github.com/miradorlabs/nodejs-sdk/commit/112a67052ee588fbfac079f9444f246b154bd357))
+* trigger release ([56156b6](https://github.com/miradorlabs/nodejs-sdk/commit/56156b67fd19ad752f836e0bd3901abc5493f088))
+
 ## [2.0.0](https://github.com/miradorlabs/nodejs-sdk/compare/v1.7.0...v2.0.0) (2026-03-19)
 
 
