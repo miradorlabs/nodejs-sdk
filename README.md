@@ -1,6 +1,11 @@
-# Mirador Ingest Node.js SDK
+# Mirador Node.js SDK
 
-Node.js SDK for the Mirador tracing platform. This package provides a server-side client using gRPC to interact with the Mirador Ingest Gateway API.
+[![npm](https://img.shields.io/npm/v/@miradorlabs/nodejs-sdk)](https://www.npmjs.com/package/@miradorlabs/nodejs-sdk)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+
+Server-side Node.js SDK for [Mirador](https://mirador.org) — cross-chain observability for blockchain applications. Capture transactions, correlate bridge flows, and trace operations across EVM and Solana chains from your backend.
+
+> Looking for the browser SDK? See [`@miradorlabs/web-sdk`](https://github.com/miradorlabs/web-sdk).
 
 ## Installation
 
@@ -749,6 +754,13 @@ mirador> close "Completed"
 ```
 
 See the [example README](./example/README.md) for full documentation.
+
+## Links
+
+- [Mirador Website](https://mirador.org)
+- [Documentation](https://docs.mirador.org)
+- [Web SDK](https://github.com/miradorlabs/web-sdk) — browser-side companion
+- [CLI](https://github.com/miradorlabs/mirador-cli) — query traces from the terminal
 
 ## License
 
