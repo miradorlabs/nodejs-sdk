@@ -9,12 +9,19 @@
   },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"
   },
   "scripts": {
     "prepare": "husky",
+    "prepublishOnly": "npm run build",
     "build": "rm -rf dist/ && rollup -c",
     "lint": "eslint src/ tests/",
     "lint:fix": "eslint src/ tests/ --fix",
