@@ -1204,6 +1204,135 @@ describe('Client', () => {
     });
   });
 
+  describe('web3.relay.addRelayQuoteHint', () => {
+    it('should add a relay quote hint with required fields encoded as snake_case JSON', async () => {
+      const mockResponse: apiGateway.FlushTraceResponse = {
+        status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
+      };
+      mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
+
+      client.trace({ name: 'test', captureStackTrace: false })
+        .web3.relay.addRelayQuoteHint({
+          requestId: 'rly_request_123',
+          originChainId: 1,
+          destChainId: 8453,
+        })
+        .flush();
+      await flushMicrotasks();
+      await flushPromises();
+
+      const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
+      const relayPlugin = calls.data?.plugins?.find((p: { relayHints?: unknown }) => p.relayHints);
+      expect(relayPlugin).toBeDefined();
+      expect(relayPlugin?.relayHints?.requestId).toBe('rly_request_123');
+      expect(relayPlugin?.relayHints?.timestamp).toBeInstanceOf(Date);
+      // Backend requires snake_case + non-zero origin / dest chain IDs.
+      const details = JSON.parse(relayPlugin?.relayHints?.details ?? '{}');
+      expect(details.origin_chain_id).toBe(1);
+      expect(details.dest_chain_id).toBe(8453);
+    });
+
+    it('should include every optional quote field in the JSON details', async () => {
+      const mockResponse: apiGateway.FlushTraceResponse = {
+        status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
+      };
+      mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
+
+      client.trace({ name: 'test', captureStackTrace: false })
+        .web3.relay.addRelayQuoteHint({
+          requestId: 'rly_full',
+          originChainId: 1,
+          destChainId: 137,
+          orderId: 'ord_42',
+          onChainId: '0xabcd',
+          originChainName: 'ethereum',
+          destChainName: 'polygon',
+          originCurrency: 'USDC',
+          destCurrency: 'USDC',
+          depositor: '0xdep',
+          recipient: '0xrec',
+          solverAddress: '0xsolver',
+          depositoryAddress: '0xdepo',
+          originAmount: '1000000',
+          destExpectedAmount: '999000',
+          destMinimumAmount: '980000',
+        })
+        .flush();
+      await flushMicrotasks();
+      await flushPromises();
+
+      const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
+      const relayPlugin = calls.data?.plugins?.find((p: { relayHints?: unknown }) => p.relayHints);
+      const details = JSON.parse(relayPlugin?.relayHints?.details ?? '{}');
+      expect(details).toEqual({
+        origin_chain_id: 1,
+        dest_chain_id: 137,
+        order_id: 'ord_42',
+        on_chain_id: '0xabcd',
+        origin_chain_name: 'ethereum',
+        dest_chain_name: 'polygon',
+        origin_currency: 'USDC',
+        dest_currency: 'USDC',
+        depositor: '0xdep',
+        recipient: '0xrec',
+        solver_address: '0xsolver',
+        depository_address: '0xdepo',
+        origin_amount: '1000000',
+        dest_expected_amount: '999000',
+        dest_minimum_amount: '980000',
+      });
+    });
+
+    it('should throw when requestId is missing', () => {
+      const trace = client.trace({ name: 'test', captureStackTrace: false });
+      expect(() => trace.web3.relay.addRelayQuoteHint({
+        requestId: '',
+        originChainId: 1,
+        destChainId: 137,
+      })).toThrow(/requestId is required/);
+    });
+
+    it('should throw when originChainId is zero', () => {
+      const trace = client.trace({ name: 'test', captureStackTrace: false });
+      expect(() => trace.web3.relay.addRelayQuoteHint({
+        requestId: 'rly_x',
+        originChainId: 0,
+        destChainId: 137,
+      })).toThrow(/originChainId/);
+    });
+
+    it('should throw when destChainId is zero', () => {
+      const trace = client.trace({ name: 'test', captureStackTrace: false });
+      expect(() => trace.web3.relay.addRelayQuoteHint({
+        requestId: 'rly_x',
+        originChainId: 1,
+        destChainId: 0,
+      })).toThrow(/destChainId/);
+    });
+
+    it('should be ignored when trace is closed', async () => {
+      const mockResponse: apiGateway.FlushTraceResponse = {
+        status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
+      };
+      mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
+
+      const trace = client.trace({ name: 'test', captureStackTrace: false });
+      trace.flush();
+      await flushMicrotasks();
+      await flushPromises();
+      await trace.close();
+
+      trace.web3.relay.addRelayQuoteHint({
+        requestId: 'rly_after_close',
+        originChainId: 1,
+        destChainId: 137,
+      });
+      expect(console.warn).toHaveBeenCalledWith(
+        '[Web3Plugin] Trace is closed, ignoring addRelayQuoteHint',
+      );
+    });
+  });
+
   describe('addTx', () => {
     it('should extract hash and chain from TransactionLike', async () => {
       const mockResponse: apiGateway.FlushTraceResponse = {

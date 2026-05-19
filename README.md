@@ -25,6 +25,7 @@ npm install @miradorlabs/nodejs-sdk
 - **Strict Ordering** - Flush calls maintain strict ordering even when async
 - **Cross-SDK Trace Sharing** - Resume traces across frontend and backend SDKs
 - **Safe Multisig Tracking** - Track Safe message and transaction confirmations via `web3.safe.addMsgHint()` and `web3.safe.addTxHint()`
+- **Relay Bridge Tracking** - Track Relay (relay.link) intent-based bridges across chains via `web3.relay.addRelayQuoteHint()` — backend processor emits the full lifecycle (deposit → solver-committed → fill / refund) as trace events
 - **EIP-1193 Provider Integration** - Send transactions directly through traces with `sendTransaction()`
 - **Configurable Logger** - Pluggable `Logger` interface (defaults to no-op; enable with `debug: true` or provide custom logger)
 - **Lifecycle Callbacks** - `TraceCallbacks` for observing flush success/failure, close, and dropped items
@@ -229,7 +230,7 @@ trace.addExistingStackTrace(stack, 'deferred_location', { reason: 'async operati
 
 #### Web3Plugin Methods
 
-The following methods are available when `Web3Plugin` is registered. They are accessed via the `web3.evm` and `web3.safe` namespaces on the trace.
+The following methods are available when `Web3Plugin` is registered. They are accessed via the `web3.evm`, `web3.safe`, and `web3.relay` namespaces on the trace.
 
 ##### `web3.evm.addTxHint(txHash, chain, options?)`
 
@@ -265,6 +266,48 @@ Add a Safe transaction hint for tracking Safe multisig transaction executions.
 trace.web3.safe.addTxHint('0xsafeTxHash...', Chain.Ethereum);
 trace.web3.safe.addTxHint('0xotherHash...', Chain.Base, 'Token transfer');
 ```
+
+##### `web3.relay.addRelayQuoteHint(hint)`
+
+Record a [Relay](https://relay.link) intent hint at quote time — *before* the user deposits — so the Mirador backend can pick the intent up and emit its full lifecycle (deposit → solver-committed → fill, or refund / failed / not-found) as events on the trace.
+
+```typescript
+trace.web3.relay.addRelayQuoteHint({
+  requestId: 'rly_request_123',  // Relay's API correlation key (required)
+  originChainId: 1,              // origin chain (required, non-zero)
+  destChainId: 8453,             // destination chain (required, non-zero)
+
+  // Optional snapshot fields — populate the trace detail view:
+  orderId: 'ord_42',
+  onChainId: '0x...',
+  originChainName: 'ethereum',
+  destChainName: 'base',
+  originCurrency: 'USDC',
+  destCurrency: 'USDC',
+  depositor: '0xdep...',
+  recipient: '0xrec...',
+  solverAddress: '0xsolver...',
+  depositoryAddress: '0xdepo...',
+  originAmount: '1000000',
+  destExpectedAmount: '999000',
+  destMinimumAmount: '980000',
+});
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `requestId` | `string` | yes | Relay's API correlation key |
+| `originChainId` | `number \| bigint` | yes | Origin chain ID (must be > 0) |
+| `destChainId` | `number \| bigint` | yes | Destination chain ID (must be > 0) |
+| `orderId` | `string` | no | Relay order ID |
+| `onChainId` | `string` | no | Relay's derived on-chain correlation id |
+| `originChainName` / `destChainName` | `string` | no | Human-readable chain names |
+| `originCurrency` / `destCurrency` | `string` | no | Token address or symbol |
+| `depositor` / `recipient` / `solverAddress` / `depositoryAddress` | `string` | no | Relevant addresses from the quote |
+| `originAmount` / `destExpectedAmount` / `destMinimumAmount` | `string` | no | Atomic-unit amounts (decimal string) |
+| `timestamp` | `Date` | no | Defaults to the call time |
+
+Internally the SDK serialises the snapshot into the snake_case JSON `details` payload the relayhint processor expects and ships it via the `RelayHint` proto message.
 
 ##### `web3.evm.addTx(tx, chain?)`
 
