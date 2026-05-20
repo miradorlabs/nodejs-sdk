@@ -267,47 +267,24 @@ trace.web3.safe.addTxHint('0xsafeTxHash...', Chain.Ethereum);
 trace.web3.safe.addTxHint('0xotherHash...', Chain.Base, 'Token transfer');
 ```
 
-##### `web3.relay.addQuoteHint(hint)`
+##### `web3.relay.addQuoteHint(requestId, message?)`
 
 Record a [Relay](https://relay.link) intent hint at quote time — *before* the user deposits — so the Mirador backend can pick the intent up and emit its full lifecycle (deposit → solver-committed → fill, or refund / failed / not-found) as events on the trace.
 
 ```typescript
-trace.web3.relay.addQuoteHint({
-  requestId: 'rly_request_123',  // Relay's API correlation key (required)
-  originChainId: 1,              // origin chain (required, non-zero)
-  destChainId: 8453,             // destination chain (required, non-zero)
+// Minimal — just the Relay requestId.
+trace.web3.relay.addQuoteHint('rly_request_123');
 
-  // Optional snapshot fields — populate the trace detail view:
-  orderId: 'ord_42',
-  onChainId: '0x...',
-  originChainName: 'ethereum',
-  destChainName: 'base',
-  originCurrency: 'USDC',
-  destCurrency: 'USDC',
-  depositor: '0xdep...',
-  recipient: '0xrec...',
-  solverAddress: '0xsolver...',
-  depositoryAddress: '0xdepo...',
-  originAmount: '1000000',
-  destExpectedAmount: '999000',
-  destMinimumAmount: '980000',
-});
+// With an optional free-form note (rides on RelayHint.details).
+trace.web3.relay.addQuoteHint('rly_request_456', 'queued from swap modal');
 ```
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
 | `requestId` | `string` | yes | Relay's API correlation key |
-| `originChainId` | `number \| bigint` | yes | Origin chain ID (must be > 0) |
-| `destChainId` | `number \| bigint` | yes | Destination chain ID (must be > 0) |
-| `orderId` | `string` | no | Relay order ID |
-| `onChainId` | `string` | no | Relay's derived on-chain correlation id |
-| `originChainName` / `destChainName` | `string` | no | Human-readable chain names |
-| `originCurrency` / `destCurrency` | `string` | no | Token address or symbol |
-| `depositor` / `recipient` / `solverAddress` / `depositoryAddress` | `string` | no | Relevant addresses from the quote |
-| `originAmount` / `destExpectedAmount` / `destMinimumAmount` | `string` | no | Atomic-unit amounts (decimal string) |
-| `timestamp` | `Date` | no | Defaults to the call time |
+| `message` | `string` | no | Free-form note attached to the hint for debugging context |
 
-Internally the SDK serialises the snapshot into the snake_case JSON `details` payload the relayhint processor expects and ships it via the `RelayHint` proto message.
+The relayhint backend processor resolves the full quote server-side from the `requestId` (via bridge-api / Relay's status feed) — you don't need to ship chain IDs, currencies, amounts, or any other metadata from the client.
 
 ##### `web3.evm.addTx(tx, chain?)`
 

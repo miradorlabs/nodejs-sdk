@@ -18,7 +18,6 @@ export type {
   EvmMethods,
   SafeNamespaceMethods,
   RelayNamespaceMethods,
-  RelayQuoteHintInput,
   MiradorPlugin,
   TraceContext,
   PluginSetupResult,

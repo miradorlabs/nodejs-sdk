@@ -65,40 +65,10 @@ export const HINT_SERIALIZERS: Record<string, HintSerializer> = {
     const plugin: FlushTraceData_Plugin = {
       relayHints: {
         requestId: hint.requestId,
-        details: encodeRelayQuoteDetails(hint),
+        details: hint.message ?? '',
         timestamp: hint.timestamp,
       },
     };
     traceData.plugins.push(plugin);
   },
 };
-
-/**
- * Encode a RelayQuoteHintData snapshot into the snake_case JSON payload the
- * relayhint backend processor expects in `RelayHint.details`. Only fields
- * with values are emitted, but `origin_chain_id` and `destination_chain_id`
- * are always included (the processor rejects payloads without them). Keys
- * mirror `recoveryQuoteDetails` in mirador-platform.
- */
-function encodeRelayQuoteDetails(
-  hint: HintDataMap[typeof HintType.RELAY_QUOTE],
-): string {
-  const payload: Record<string, string | number> = {
-    origin_chain_id: Number(hint.originChainId),
-    dest_chain_id: Number(hint.destChainId),
-  };
-  if (hint.orderId) payload.order_id = hint.orderId;
-  if (hint.onChainId) payload.on_chain_id = hint.onChainId;
-  if (hint.originChainName) payload.origin_chain_name = hint.originChainName;
-  if (hint.destChainName) payload.dest_chain_name = hint.destChainName;
-  if (hint.originCurrency) payload.origin_currency = hint.originCurrency;
-  if (hint.destCurrency) payload.dest_currency = hint.destCurrency;
-  if (hint.depositor) payload.depositor = hint.depositor;
-  if (hint.recipient) payload.recipient = hint.recipient;
-  if (hint.solverAddress) payload.solver_address = hint.solverAddress;
-  if (hint.depositoryAddress) payload.depository_address = hint.depositoryAddress;
-  if (hint.originAmount) payload.origin_amount = hint.originAmount;
-  if (hint.destExpectedAmount) payload.dest_expected_amount = hint.destExpectedAmount;
-  if (hint.destMinimumAmount) payload.dest_minimum_amount = hint.destMinimumAmount;
-  return JSON.stringify(payload);
-}
