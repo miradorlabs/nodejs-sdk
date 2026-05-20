@@ -25,7 +25,7 @@ npm install @miradorlabs/nodejs-sdk
 - **Strict Ordering** - Flush calls maintain strict ordering even when async
 - **Cross-SDK Trace Sharing** - Resume traces across frontend and backend SDKs
 - **Safe Multisig Tracking** - Track Safe message and transaction confirmations via `web3.safe.addMsgHint()` and `web3.safe.addTxHint()`
-- **Relay Bridge Tracking** - Track Relay (relay.link) intent-based bridges across chains via `web3.relay.addRelayQuoteHint()` — backend processor emits the full lifecycle (deposit → solver-committed → fill / refund) as trace events
+- **Relay Bridge Tracking** - Track Relay (relay.link) intent-based bridges across chains via `web3.relay.addQuoteHint()` — backend processor emits the full lifecycle (deposit → solver-committed → fill / refund) as trace events
 - **EIP-1193 Provider Integration** - Send transactions directly through traces with `sendTransaction()`
 - **Configurable Logger** - Pluggable `Logger` interface (defaults to no-op; enable with `debug: true` or provide custom logger)
 - **Lifecycle Callbacks** - `TraceCallbacks` for observing flush success/failure, close, and dropped items
@@ -267,12 +267,12 @@ trace.web3.safe.addTxHint('0xsafeTxHash...', Chain.Ethereum);
 trace.web3.safe.addTxHint('0xotherHash...', Chain.Base, 'Token transfer');
 ```
 
-##### `web3.relay.addRelayQuoteHint(hint)`
+##### `web3.relay.addQuoteHint(hint)`
 
 Record a [Relay](https://relay.link) intent hint at quote time — *before* the user deposits — so the Mirador backend can pick the intent up and emit its full lifecycle (deposit → solver-committed → fill, or refund / failed / not-found) as events on the trace.
 
 ```typescript
-trace.web3.relay.addRelayQuoteHint({
+trace.web3.relay.addQuoteHint({
   requestId: 'rly_request_123',  // Relay's API correlation key (required)
   originChainId: 1,              // origin chain (required, non-zero)
   destChainId: 8453,             // destination chain (required, non-zero)

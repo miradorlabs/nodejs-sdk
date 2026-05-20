@@ -1204,7 +1204,7 @@ describe('Client', () => {
     });
   });
 
-  describe('web3.relay.addRelayQuoteHint', () => {
+  describe('web3.relay.addQuoteHint', () => {
     it('should add a relay quote hint with required fields encoded as snake_case JSON', async () => {
       const mockResponse: apiGateway.FlushTraceResponse = {
         status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
@@ -1212,7 +1212,7 @@ describe('Client', () => {
       mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
 
       client.trace({ name: 'test', captureStackTrace: false })
-        .web3.relay.addRelayQuoteHint({
+        .web3.relay.addQuoteHint({
           requestId: 'rly_request_123',
           originChainId: 1,
           destChainId: 8453,
@@ -1239,7 +1239,7 @@ describe('Client', () => {
       mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
 
       client.trace({ name: 'test', captureStackTrace: false })
-        .web3.relay.addRelayQuoteHint({
+        .web3.relay.addQuoteHint({
           requestId: 'rly_full',
           originChainId: 1,
           destChainId: 137,
@@ -1285,7 +1285,7 @@ describe('Client', () => {
 
     it('should throw when requestId is missing', () => {
       const trace = client.trace({ name: 'test', captureStackTrace: false });
-      expect(() => trace.web3.relay.addRelayQuoteHint({
+      expect(() => trace.web3.relay.addQuoteHint({
         requestId: '',
         originChainId: 1,
         destChainId: 137,
@@ -1294,7 +1294,7 @@ describe('Client', () => {
 
     it('should throw when originChainId is zero', () => {
       const trace = client.trace({ name: 'test', captureStackTrace: false });
-      expect(() => trace.web3.relay.addRelayQuoteHint({
+      expect(() => trace.web3.relay.addQuoteHint({
         requestId: 'rly_x',
         originChainId: 0,
         destChainId: 137,
@@ -1303,7 +1303,7 @@ describe('Client', () => {
 
     it('should throw when destChainId is zero', () => {
       const trace = client.trace({ name: 'test', captureStackTrace: false });
-      expect(() => trace.web3.relay.addRelayQuoteHint({
+      expect(() => trace.web3.relay.addQuoteHint({
         requestId: 'rly_x',
         originChainId: 1,
         destChainId: 0,
@@ -1322,13 +1322,13 @@ describe('Client', () => {
       await flushPromises();
       await trace.close();
 
-      trace.web3.relay.addRelayQuoteHint({
+      trace.web3.relay.addQuoteHint({
         requestId: 'rly_after_close',
         originChainId: 1,
         destChainId: 137,
       });
       expect(console.warn).toHaveBeenCalledWith(
-        '[Web3Plugin] Trace is closed, ignoring addRelayQuoteHint',
+        '[Web3Plugin] Trace is closed, ignoring addQuoteHint',
       );
     });
   });
