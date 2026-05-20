@@ -59,4 +59,16 @@ export const HINT_SERIALIZERS: Record<string, HintSerializer> = {
     };
     traceData.plugins.push(plugin);
   },
+
+  [HintType.RELAY_QUOTE]: (traceData, data) => {
+    const hint = data as unknown as HintDataMap[typeof HintType.RELAY_QUOTE];
+    const plugin: FlushTraceData_Plugin = {
+      relayHints: {
+        requestId: hint.requestId,
+        details: hint.message ?? '',
+        timestamp: hint.timestamp,
+      },
+    };
+    traceData.plugins.push(plugin);
+  },
 };

@@ -1204,6 +1204,72 @@ describe('Client', () => {
     });
   });
 
+  describe('web3.relay.addQuoteHint', () => {
+    it('should add a relay quote hint with just a requestId', async () => {
+      const mockResponse: apiGateway.FlushTraceResponse = {
+        status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
+      };
+      mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
+
+      client.trace({ name: 'test', captureStackTrace: false })
+        .web3.relay.addQuoteHint('rly_request_123')
+        .flush();
+      await flushMicrotasks();
+      await flushPromises();
+
+      const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
+      const relayPlugin = calls.data?.plugins?.find((p: { relayHints?: unknown }) => p.relayHints);
+      expect(relayPlugin).toBeDefined();
+      expect(relayPlugin?.relayHints?.requestId).toBe('rly_request_123');
+      expect(relayPlugin?.relayHints?.timestamp).toBeInstanceOf(Date);
+      // No message → details is the empty string (no JSON wrapper).
+      expect(relayPlugin?.relayHints?.details).toBe('');
+    });
+
+    it('should pass the optional message through as the proto details field', async () => {
+      const mockResponse: apiGateway.FlushTraceResponse = {
+        status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
+      };
+      mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
+
+      client.trace({ name: 'test', captureStackTrace: false })
+        .web3.relay.addQuoteHint('rly_with_note', 'queued from swap modal')
+        .flush();
+      await flushMicrotasks();
+      await flushPromises();
+
+      const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
+      const relayPlugin = calls.data?.plugins?.find((p: { relayHints?: unknown }) => p.relayHints);
+      expect(relayPlugin?.relayHints?.requestId).toBe('rly_with_note');
+      expect(relayPlugin?.relayHints?.details).toBe('queued from swap modal');
+    });
+
+    it('should throw when requestId is missing', () => {
+      const trace = client.trace({ name: 'test', captureStackTrace: false });
+      expect(() => trace.web3.relay.addQuoteHint('')).toThrow(
+        /requestId is required/,
+      );
+    });
+
+    it('should be ignored when trace is closed', async () => {
+      const mockResponse: apiGateway.FlushTraceResponse = {
+        status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
+      };
+      mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
+
+      const trace = client.trace({ name: 'test', captureStackTrace: false });
+      trace.flush();
+      await flushMicrotasks();
+      await flushPromises();
+      await trace.close();
+
+      trace.web3.relay.addQuoteHint('rly_after_close');
+      expect(console.warn).toHaveBeenCalledWith(
+        '[Web3Plugin] Trace is closed, ignoring addQuoteHint',
+      );
+    });
+  });
+
   describe('addTx', () => {
     it('should extract hash and chain from TransactionLike', async () => {
       const mockResponse: apiGateway.FlushTraceResponse = {
