@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.1.1](https://github.com/miradorlabs/nodejs-sdk/compare/v2.1.0...v2.1.1) (2026-05-21)
+
+
+### Bug Fixes
+
+* fix module resolution issues ([9396b73](https://github.com/miradorlabs/nodejs-sdk/commit/9396b73f6ba3e7060b04c199d1c1f4c6acb2838f))
+* fix module resolution issues ([8ae9875](https://github.com/miradorlabs/nodejs-sdk/commit/8ae98756a4a6e4148964691b1d8cdebcfe8efb7f))
+
 ## [2.1.0](https://github.com/miradorlabs/nodejs-sdk/compare/v2.0.1...v2.1.0) (2026-05-20)
 
 
