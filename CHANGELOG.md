@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.1.0](https://github.com/miradorlabs/nodejs-sdk/compare/v2.0.1...v2.1.0) (2026-05-20)
+
+
+### Features
+
+* **relay:** add relay bridge plugin functionality to node sdk ([cb05955](https://github.com/miradorlabs/nodejs-sdk/commit/cb05955f3e13d8663f47b0c59e414f6f0e1d5515))
+* **relay:** add relay bridge plugin functionality to node sdk ([b632a9d](https://github.com/miradorlabs/nodejs-sdk/commit/b632a9d3444f84afe80504fa84983fea8e699748))
+
 ## [2.0.1](https://github.com/miradorlabs/nodejs-sdk/compare/v2.0.0...v2.0.1) (2026-04-29)
 
 
