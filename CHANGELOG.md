@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.1.2](https://github.com/miradorlabs/nodejs-sdk/compare/v2.1.1...v2.1.2) (2026-05-22)
+
+
+### Bug Fixes
+
+* bundle proto stubs so the SDK loads under CommonJS ([537b34a](https://github.com/miradorlabs/nodejs-sdk/commit/537b34a058ec36198e85628d3136ecd5608e5623))
+* bundle proto stubs so the SDK loads under CommonJS ([2b626a5](https://github.com/miradorlabs/nodejs-sdk/commit/2b626a54da4ea711f677d1b45c21455b5e798393))
+
 ## [2.1.1](https://github.com/miradorlabs/nodejs-sdk/compare/v2.1.0...v2.1.1) (2026-05-21)
 
 
