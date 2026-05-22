@@ -3,7 +3,7 @@
  */
 
 // Import shared types used locally in this file
-import type { Logger } from '@miradorlabs/plugins';
+import type { Logger, Severity } from '@miradorlabs/plugins';
 
 // Re-export shared types from plugins package
 export {
