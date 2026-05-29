@@ -21,7 +21,7 @@ export const HINT_SERIALIZERS: Record<string, HintSerializer> = {
   [HintType.TX_HASH]: (traceData, data) => {
     const hint = data as unknown as HintDataMap[typeof HintType.TX_HASH];
     const plugin: FlushTraceData_Plugin = {
-      txHashHints: {
+      evmTxHints: {
         chain: resolveProtoChain(hint.chain),
         chainId: hint.chain,
         txHash: hint.txHash,
@@ -53,6 +53,18 @@ export const HINT_SERIALIZERS: Record<string, HintSerializer> = {
         chain: resolveProtoChain(hint.chain),
         chainId: hint.chain,
         safeTxHash: hint.safeTxHash,
+        details: hint.details,
+        timestamp: hint.timestamp,
+      },
+    };
+    traceData.plugins.push(plugin);
+  },
+
+  [HintType.SOLANA_TX]: (traceData, data) => {
+    const hint = data as unknown as HintDataMap[typeof HintType.SOLANA_TX];
+    const plugin: FlushTraceData_Plugin = {
+      solanaTxHints: {
+        signature: hint.signature,
         details: hint.details,
         timestamp: hint.timestamp,
       },

@@ -72,10 +72,10 @@
   },
   "dependencies": {
     "@bufbuild/protobuf": "^2.10.1",
-    "@miradorlabs/plugins": "1.1.0",
+    "@miradorlabs/plugins": "1.2.0",
     "@grpc/grpc-js": "^1.14.1",
     "google-protobuf": "^4.0.1",
-    "mirador-gateway-ingest": "https://storage.googleapis.com/mirador-shd-packages/gateway/ingest/nodejs/mirador-gateway-ingest-1.0.8.tgz",
+    "mirador-gateway-ingest": "https://storage.googleapis.com/mirador-shd-packages/gateway/ingest/nodejs/mirador-gateway-ingest-1.0.9.tgz",
     "rxjs": "^7.8.2"
   }
 }
