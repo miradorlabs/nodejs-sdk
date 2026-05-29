@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.2.0](https://github.com/miradorlabs/nodejs-sdk/compare/v2.1.2...v2.2.0) (2026-05-29)
+
+
+### Features
+
+* **chains:** add solana tx support and hyperevm chain support ([952bece](https://github.com/miradorlabs/nodejs-sdk/commit/952beceb62b539725b1948613aecf0984f5bf27f))
+* **chains:** add solana tx support and hyperevm chain support ([ff363fe](https://github.com/miradorlabs/nodejs-sdk/commit/ff363fe623000749b146831ceaae2e4c48f1b6f7))
+
 ## [2.1.2](https://github.com/miradorlabs/nodejs-sdk/compare/v2.1.1...v2.1.2) (2026-05-22)
 
 
