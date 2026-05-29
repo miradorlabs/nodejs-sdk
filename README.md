@@ -7,6 +7,29 @@ Server-side Node.js SDK for [Mirador](https://mirador.org) — cross-chain obser
 
 > Looking for the browser SDK? See [`@miradorlabs/web-sdk`](https://github.com/miradorlabs/web-sdk).
 
+## Table of Contents
+
+- [Installation](#installation)
+- [Features](#features)
+- [Quick Start](#quick-start)
+- [API Reference](#api-reference)
+  - [Client](#client)
+  - [Trace (Builder)](#trace-builder)
+- [Logger](#logger)
+- [Lifecycle Callbacks (TraceCallbacks)](#lifecycle-callbacks-tracecallbacks)
+- [Sampling](#sampling)
+- [Complete Example: Transaction Tracking](#complete-example-transaction-tracking)
+- [Tracing Transaction Input Data with ethers.js / viem](#tracing-transaction-input-data-with-ethersjs--viem)
+- [MiradorProvider](#miradorprovider)
+- [Chain Utilities](#chain-utilities)
+- [Configuration](#configuration)
+- [Stack Trace Utilities](#stack-trace-utilities)
+- [TypeScript Support](#typescript-support)
+- [Development](#development)
+- [Example CLI](#example-cli)
+- [Links](#links)
+- [License](#license)
+
 ## Installation
 
 ```bash
