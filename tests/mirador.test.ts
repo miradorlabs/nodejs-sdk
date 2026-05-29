@@ -279,12 +279,12 @@ describe('Client', () => {
       await flushPromises();
 
       const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
-      const txPlugin = calls.data?.plugins?.find(p => p.txHashHints);
+      const txPlugin = calls.data?.plugins?.find(p => p.evmTxHints);
       expect(txPlugin).toBeDefined();
-      expect(txPlugin?.txHashHints?.txHash).toBe('0x123...');
-      expect(txPlugin?.txHashHints?.chain).toBe(ProtoChain.CHAIN_ETHEREUM);
-      expect(txPlugin?.txHashHints?.details).toBe('Swap transaction');
-      expect(txPlugin?.txHashHints?.timestamp).toBeInstanceOf(Date);
+      expect(txPlugin?.evmTxHints?.txHash).toBe('0x123...');
+      expect(txPlugin?.evmTxHints?.chain).toBe(ProtoChain.CHAIN_ETHEREUM);
+      expect(txPlugin?.evmTxHints?.details).toBe('Swap transaction');
+      expect(txPlugin?.evmTxHints?.timestamp).toBeInstanceOf(Date);
     });
 
     it('should handle different chain names', async () => {
@@ -305,7 +305,7 @@ describe('Client', () => {
       await flushPromises();
 
       let calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
-      expect(calls.data?.plugins?.find(p => p.txHashHints)?.txHashHints?.chain).toBe(ProtoChain.CHAIN_POLYGON);
+      expect(calls.data?.plugins?.find(p => p.evmTxHints)?.evmTxHints?.chain).toBe(ProtoChain.CHAIN_POLYGON);
 
       // Test arbitrum
       mockApiGatewayClient.FlushTrace.mockClear();
@@ -316,7 +316,7 @@ describe('Client', () => {
       await flushPromises();
 
       calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
-      expect(calls.data?.plugins?.find(p => p.txHashHints)?.txHashHints?.chain).toBe(ProtoChain.CHAIN_ARBITRUM);
+      expect(calls.data?.plugins?.find(p => p.evmTxHints)?.evmTxHints?.chain).toBe(ProtoChain.CHAIN_ARBITRUM);
 
       // Test base
       mockApiGatewayClient.FlushTrace.mockClear();
@@ -327,7 +327,7 @@ describe('Client', () => {
       await flushPromises();
 
       calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
-      expect(calls.data?.plugins?.find(p => p.txHashHints)?.txHashHints?.chain).toBe(ProtoChain.CHAIN_BASE);
+      expect(calls.data?.plugins?.find(p => p.evmTxHints)?.evmTxHints?.chain).toBe(ProtoChain.CHAIN_BASE);
 
       // Test optimism
       mockApiGatewayClient.FlushTrace.mockClear();
@@ -338,7 +338,7 @@ describe('Client', () => {
       await flushPromises();
 
       calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
-      expect(calls.data?.plugins?.find(p => p.txHashHints)?.txHashHints?.chain).toBe(ProtoChain.CHAIN_OPTIMISM);
+      expect(calls.data?.plugins?.find(p => p.evmTxHints)?.evmTxHints?.chain).toBe(ProtoChain.CHAIN_OPTIMISM);
 
       // Test bsc
       mockApiGatewayClient.FlushTrace.mockClear();
@@ -349,7 +349,7 @@ describe('Client', () => {
       await flushPromises();
 
       calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
-      expect(calls.data?.plugins?.find(p => p.txHashHints)?.txHashHints?.chain).toBe(ProtoChain.CHAIN_BSC);
+      expect(calls.data?.plugins?.find(p => p.evmTxHints)?.evmTxHints?.chain).toBe(ProtoChain.CHAIN_BSC);
     });
 
     it('should flush without txHashHint when not set', async () => {
@@ -408,8 +408,8 @@ describe('Client', () => {
       });
       expect(calls.data?.tags?.[0]?.tags).toEqual(['dex', 'swap']);
       expect(calls.data?.events).toHaveLength(3);
-      expect(calls.data?.plugins?.find(p => p.txHashHints)?.txHashHints?.txHash).toBe('0x123...');
-      expect(calls.data?.plugins?.find(p => p.txHashHints)?.txHashHints?.chain).toBe(ProtoChain.CHAIN_ETHEREUM);
+      expect(calls.data?.plugins?.find(p => p.evmTxHints)?.evmTxHints?.txHash).toBe('0x123...');
+      expect(calls.data?.plugins?.find(p => p.evmTxHints)?.evmTxHints?.chain).toBe(ProtoChain.CHAIN_ETHEREUM);
     });
 
     it('should log error when flush receives error status', async () => {
@@ -529,7 +529,7 @@ describe('Client', () => {
         await flushPromises();
 
         const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
-        expect(calls.data?.plugins?.find(p => p.txHashHints)?.txHashHints?.chain).toBe(expectedChainEnums[chainName]);
+        expect(calls.data?.plugins?.find(p => p.evmTxHints)?.evmTxHints?.chain).toBe(expectedChainEnums[chainName]);
       }
     });
 
@@ -621,7 +621,7 @@ describe('Client', () => {
 
       const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
       expect(calls.data?.attributes?.[0]?.attributes).toEqual({ user: '0xabc' });
-      expect(calls.data?.plugins?.filter(p => p.txHashHints)).toHaveLength(1);
+      expect(calls.data?.plugins?.filter(p => p.evmTxHints)).toHaveLength(1);
       expect(calls.data?.events).toHaveLength(1);
       expect(calls.data?.events?.[0].name).toBe('Tx input data');
       expect(calls.data?.events?.[0].details).toBe('0xa9059cbb00000000');
@@ -883,7 +883,7 @@ describe('Client', () => {
       await flushPromises();
 
       const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
-      expect(calls.data?.plugins?.find(p => p.txHashHints)?.txHashHints?.details).toBe('simple string');
+      expect(calls.data?.plugins?.find(p => p.evmTxHints)?.evmTxHints?.details).toBe('simple string');
     });
 
     it('should accept TxHintOptions with input', async () => {
@@ -920,7 +920,7 @@ describe('Client', () => {
       const inputEvent = calls.data?.events?.find((e: { name?: string }) => e.name === 'Tx input data');
       expect(inputEvent).toBeDefined();
       expect(inputEvent?.details).toBe('0xa9059cbb...');
-      expect(calls.data?.plugins?.find(p => p.txHashHints)?.txHashHints?.details).toBe('swap');
+      expect(calls.data?.plugins?.find(p => p.evmTxHints)?.evmTxHints?.details).toBe('swap');
     });
   });
 
@@ -1039,7 +1039,7 @@ describe('Client', () => {
       expect(result).toBe(trace);
     });
 
-    it('should work alongside txHashHints and other builder methods', async () => {
+    it('should work alongside evmTxHints and other builder methods', async () => {
       const mockResponse: apiGateway.FlushTraceResponse = {
         status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
       };
@@ -1056,7 +1056,7 @@ describe('Client', () => {
       await flushPromises();
 
       const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
-      expect(calls.data?.plugins?.filter(p => p.txHashHints)).toHaveLength(1);
+      expect(calls.data?.plugins?.filter(p => p.evmTxHints)).toHaveLength(1);
       expect(calls.data?.plugins?.filter(p => p.safeMsgHints)).toHaveLength(1);
       expect(calls.data?.plugins?.find(p => p.safeMsgHints)?.safeMsgHints?.messageHash).toBe('0xmsg123');
       expect(calls.data?.plugins?.find(p => p.safeMsgHints)?.safeMsgHints?.details).toBe('approval');
@@ -1178,7 +1178,7 @@ describe('Client', () => {
       expect(result).toBe(trace);
     });
 
-    it('should work alongside txHashHints, safeMsgHints, and other builder methods', async () => {
+    it('should work alongside evmTxHints, safeMsgHints, and other builder methods', async () => {
       const mockResponse: apiGateway.FlushTraceResponse = {
         status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
       };
@@ -1196,7 +1196,7 @@ describe('Client', () => {
       await flushPromises();
 
       const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
-      expect(calls.data?.plugins?.filter(p => p.txHashHints)).toHaveLength(1);
+      expect(calls.data?.plugins?.filter(p => p.evmTxHints)).toHaveLength(1);
       expect(calls.data?.plugins?.filter(p => p.safeMsgHints)).toHaveLength(1);
       expect(calls.data?.plugins?.filter(p => p.safeTxHints)).toHaveLength(1);
       expect(calls.data?.plugins?.find(p => p.safeTxHints)?.safeTxHints?.safeTxHash).toBe('0xsafetx123');
@@ -1284,8 +1284,8 @@ describe('Client', () => {
       await flushPromises();
 
       const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
-      expect(calls.data?.plugins?.find(p => p.txHashHints)?.txHashHints?.txHash).toBe('0xabc');
-      expect(calls.data?.plugins?.find(p => p.txHashHints)?.txHashHints?.chain).toBe(ProtoChain.CHAIN_ETHEREUM);
+      expect(calls.data?.plugins?.find(p => p.evmTxHints)?.evmTxHints?.txHash).toBe('0xabc');
+      expect(calls.data?.plugins?.find(p => p.evmTxHints)?.evmTxHints?.chain).toBe(ProtoChain.CHAIN_ETHEREUM);
     });
 
     it('should extract input data from tx.data', async () => {
@@ -1319,7 +1319,7 @@ describe('Client', () => {
       await flushPromises();
 
       const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
-      expect(calls.data?.plugins?.find(p => p.txHashHints)?.txHashHints?.chain).toBe(ProtoChain.CHAIN_POLYGON);
+      expect(calls.data?.plugins?.find(p => p.evmTxHints)?.evmTxHints?.chain).toBe(ProtoChain.CHAIN_POLYGON);
       const inputEvent = calls.data?.events?.find((e: { name?: string }) => e.name === 'Tx input data');
       expect(inputEvent).toBeDefined();
       expect(inputEvent?.details).toBe('0xdeadbeef');
@@ -1338,7 +1338,7 @@ describe('Client', () => {
       await flushPromises();
 
       const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
-      expect(calls.data?.plugins?.find(p => p.txHashHints)?.txHashHints?.chain).toBe(ProtoChain.CHAIN_POLYGON);
+      expect(calls.data?.plugins?.find(p => p.evmTxHints)?.evmTxHints?.chain).toBe(ProtoChain.CHAIN_POLYGON);
     });
 
     it('should return this for chaining', () => {
@@ -1496,9 +1496,9 @@ describe('Client', () => {
       await flushPromises();
 
       const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
-      expect(calls.data?.plugins?.find(p => p.txHashHints)?.txHashHints?.txHash).toBe('0xhash');
-      expect(calls.data?.plugins?.find(p => p.txHashHints)?.txHashHints?.chain).toBe(ProtoChain.CHAIN_ETHEREUM);
-      expect(calls.data?.plugins?.find(p => p.txHashHints)?.txHashHints?.details).toBeUndefined();
+      expect(calls.data?.plugins?.find(p => p.evmTxHints)?.evmTxHints?.txHash).toBe('0xhash');
+      expect(calls.data?.plugins?.find(p => p.evmTxHints)?.evmTxHints?.chain).toBe(ProtoChain.CHAIN_ETHEREUM);
+      expect(calls.data?.plugins?.find(p => p.evmTxHints)?.evmTxHints?.details).toBeUndefined();
     });
 
     it('should support addTxHint with string details (raw string, not JSON)', async () => {
@@ -1509,7 +1509,7 @@ describe('Client', () => {
       await flushPromises();
 
       const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
-      expect(calls.data?.plugins?.find(p => p.txHashHints)?.txHashHints?.details).toBe('swap tx');
+      expect(calls.data?.plugins?.find(p => p.evmTxHints)?.evmTxHints?.details).toBe('swap tx');
     });
 
     it('should support addTxHint with undefined options', async () => {
@@ -1520,9 +1520,9 @@ describe('Client', () => {
       await flushPromises();
 
       const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
-      expect(calls.data?.plugins?.find(p => p.txHashHints)?.txHashHints?.txHash).toBe('0xhash');
-      expect(calls.data?.plugins?.find(p => p.txHashHints)?.txHashHints?.chain).toBe(ProtoChain.CHAIN_BASE);
-      expect(calls.data?.plugins?.find(p => p.txHashHints)?.txHashHints?.details).toBeUndefined();
+      expect(calls.data?.plugins?.find(p => p.evmTxHints)?.evmTxHints?.txHash).toBe('0xhash');
+      expect(calls.data?.plugins?.find(p => p.evmTxHints)?.evmTxHints?.chain).toBe(ProtoChain.CHAIN_BASE);
+      expect(calls.data?.plugins?.find(p => p.evmTxHints)?.evmTxHints?.details).toBeUndefined();
     });
 
     it('should support addTxInputData', async () => {
@@ -1574,9 +1574,9 @@ describe('Client', () => {
       expect(inputDataEvent?.details).toBe('0xdata');
 
       // Verify tx hints with raw string details
-      expect(calls.data?.plugins?.find(p => p.txHashHints)?.txHashHints?.txHash).toBe('0xhash');
-      expect(calls.data?.plugins?.find(p => p.txHashHints)?.txHashHints?.chain).toBe(ProtoChain.CHAIN_ETHEREUM);
-      expect(calls.data?.plugins?.find(p => p.txHashHints)?.txHashHints?.details).toBe('swap tx');
+      expect(calls.data?.plugins?.find(p => p.evmTxHints)?.evmTxHints?.txHash).toBe('0xhash');
+      expect(calls.data?.plugins?.find(p => p.evmTxHints)?.evmTxHints?.chain).toBe(ProtoChain.CHAIN_ETHEREUM);
+      expect(calls.data?.plugins?.find(p => p.evmTxHints)?.evmTxHints?.details).toBe('swap tx');
     });
 
     it('should ignore methods on closed trace without crashing', async () => {
@@ -1989,7 +1989,7 @@ describe('Client', () => {
       expect(JSON.parse(updateCall.data?.events?.[1]?.details || '{}')).toEqual({ duration: 150 });
     });
 
-    it('should include txHashHints in the FlushTrace request', async () => {
+    it('should include evmTxHints in the FlushTrace request', async () => {
       client.trace({ traceId: 'trace-tx', captureStackTrace: false })
         .web3.evm.addTxHint('0xhash123', 'ethereum', 'swap tx')
         .flush();
@@ -1997,10 +1997,10 @@ describe('Client', () => {
       await flushPromises();
 
       const updateCall = (mockApiGatewayClient as jest.Mocked<apiGateway.IngestGatewayServiceClientImpl>).FlushTrace.mock.calls[0][0];
-      expect(updateCall.data?.plugins?.filter(p => p.txHashHints)).toHaveLength(1);
-      expect(updateCall.data?.plugins?.find(p => p.txHashHints)?.txHashHints?.txHash).toBe('0xhash123');
-      expect(updateCall.data?.plugins?.find(p => p.txHashHints)?.txHashHints?.chain).toBe(ProtoChain.CHAIN_ETHEREUM);
-      expect(updateCall.data?.plugins?.find(p => p.txHashHints)?.txHashHints?.details).toBe('swap tx');
+      expect(updateCall.data?.plugins?.filter(p => p.evmTxHints)).toHaveLength(1);
+      expect(updateCall.data?.plugins?.find(p => p.evmTxHints)?.evmTxHints?.txHash).toBe('0xhash123');
+      expect(updateCall.data?.plugins?.find(p => p.evmTxHints)?.evmTxHints?.chain).toBe(ProtoChain.CHAIN_ETHEREUM);
+      expect(updateCall.data?.plugins?.find(p => p.evmTxHints)?.evmTxHints?.details).toBe('swap tx');
     });
 
     it('should include all data types in a complex resumed trace', async () => {
@@ -2021,7 +2021,7 @@ describe('Client', () => {
       expect(updateCall.data?.tags?.[0]?.tags).toEqual(['dex']);
       expect(updateCall.data?.events?.map((e: { name?: string }) => e.name)).toContain('started');
       expect(updateCall.data?.events?.map((e: { name?: string }) => e.name)).toContain('Tx input data');
-      expect(updateCall.data?.plugins?.find(p => p.txHashHints)?.txHashHints?.chain).toBe(ProtoChain.CHAIN_POLYGON);
+      expect(updateCall.data?.plugins?.find(p => p.evmTxHints)?.evmTxHints?.chain).toBe(ProtoChain.CHAIN_POLYGON);
     });
 
     it('should start keep-alive after successful flush()', async () => {
@@ -2207,7 +2207,7 @@ describe('Client', () => {
       expect(createCall.data?.attributes?.[0]?.attributes).toEqual({ user: '0xabc' });
       expect(createCall.data?.tags?.[0]?.tags).toEqual(['dex']);
       expect(createCall.data?.events?.[0]?.name).toBe('started');
-      expect(createCall.data?.plugins?.find(p => p.txHashHints)?.txHashHints?.txHash).toBe('0xhash');
+      expect(createCall.data?.plugins?.find(p => p.evmTxHints)?.evmTxHints?.txHash).toBe('0xhash');
     });
 
     it('should close a standard trace correctly', async () => {
