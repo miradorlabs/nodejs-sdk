@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.0](https://github.com/miradorlabs/nodejs-sdk/compare/v2.2.0...v2.3.0) (2026-06-02)
+
+
+### Features
+
+* **chains:** add canton network tx hint tracing ([#71](https://github.com/miradorlabs/nodejs-sdk/issues/71)) ([5eae5e3](https://github.com/miradorlabs/nodejs-sdk/commit/5eae5e3e40b8a85d0895bc0afdb2598cbec171b0))
+
 ## [2.2.0](https://github.com/miradorlabs/nodejs-sdk/compare/v2.1.2...v2.2.0) (2026-05-29)
 
 
