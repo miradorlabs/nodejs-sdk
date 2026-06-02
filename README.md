@@ -50,6 +50,7 @@ npm install @miradorlabs/nodejs-sdk
 - **Safe Multisig Tracking** - Track Safe message and transaction confirmations via `web3.safe.addMsgHint()` and `web3.safe.addTxHint()`
 - **Solana Transaction Tracking** - Correlate Solana transactions to a trace via `web3.solana.addTxHint(signature)`
 - **Relay Bridge Tracking** - Track Relay (relay.link) intent-based bridges across chains via `web3.relay.addQuoteHint()` — backend processor emits the full lifecycle (deposit → solver-committed → fill / refund) as trace events
+- **Canton Transaction Tracking** - Correlate Canton (Daml Ledger API v2) transactions to a trace via `web3.canton.addTxHint(updateId, partyId?)` — `partyId` is optional (omit it for observer co-hosts)
 - **EIP-1193 Provider Integration** - Send transactions directly through traces with `sendTransaction()`
 - **Configurable Logger** - Pluggable `Logger` interface (defaults to no-op; enable with `debug: true` or provide custom logger)
 - **Lifecycle Callbacks** - `TraceCallbacks` for observing flush success/failure, close, and dropped items
@@ -254,7 +255,7 @@ trace.addExistingStackTrace(stack, 'deferred_location', { reason: 'async operati
 
 #### Web3Plugin Methods
 
-The following methods are available when `Web3Plugin` is registered. They are accessed via the `web3.evm`, `web3.safe`, `web3.solana`, and `web3.relay` namespaces on the trace.
+The following methods are available when `Web3Plugin` is registered. They are accessed via the `web3.evm`, `web3.safe`, `web3.solana`, `web3.relay`, and `web3.canton` namespaces on the trace.
 
 ##### `web3.evm.addTxHint(txHash, chain, options?)`
 
@@ -323,6 +324,26 @@ trace.web3.relay.addQuoteHint('rly_request_456', 'queued from swap modal');
 | `message` | `string` | no | Free-form note attached to the hint for debugging context |
 
 The relayhint backend processor resolves the full quote server-side from the `requestId` (via bridge-api / Relay's status feed) — you don't need to ship chain IDs, currencies, amounts, or any other metadata from the client.
+
+##### `web3.canton.addTxHint(updateId, partyId?, details?)`
+
+Correlate a Canton (Daml Ledger API v2) transaction to the trace by its ledger **`updateId`** — the unique id of the on-ledger update. Like Solana, Canton lives outside the EVM `Chain` enum, so there's no chain argument; the chain identity is implicit (emitted as `chain_name = "canton"`).
+
+`partyId` is optional: include it to scope the update to a specific party, or omit it when the participant only co-hosts the contract as an observer — the backend can resolve the update from the `updateId` alone.
+
+```typescript
+trace.web3.canton.addTxHint('1220...updateId');
+trace.web3.canton.addTxHint('1220...updateId', 'Alice::1220...');         // scope to a party
+trace.web3.canton.addTxHint('1220...updateId', 'Alice::1220...', 'mint'); // + a note
+```
+
+| Parameter  | Type     | Required | Description |
+|------------|----------|----------|-------------|
+| `updateId` | `string` | yes      | Canton ledger update id (the transaction's unique identifier) |
+| `partyId`  | `string` | no       | Party to scope the update to; omit for observer co-hosts |
+| `details`  | `string` | no       | Optional free-form note attached to the hint |
+
+The canton-hint backend processor resolves the full transaction server-side from the `updateId` and emits its events onto the trace.
 
 ##### `web3.evm.addTx(tx, chain?)`
 
@@ -408,7 +429,7 @@ await trace.close('User completed workflow');
 Returns: `Promise<void>`
 
 **Important:** Once a trace is closed:
-- All method calls (`addAttribute`, `addEvent`, `addTag`, `web3.evm.addTxHint`, `web3.safe.addMsgHint`, `web3.safe.addTxHint`, `web3.solana.addTxHint`, `web3.relay.addQuoteHint`) will be ignored with a warning
+- All method calls (`addAttribute`, `addEvent`, `addTag`, `web3.evm.addTxHint`, `web3.safe.addMsgHint`, `web3.safe.addTxHint`, `web3.solana.addTxHint`, `web3.relay.addQuoteHint`, `web3.canton.addTxHint`) will be ignored with a warning
 - The keep-alive timer will be stopped
 - Any pending data will be flushed, then a close request will be sent to the server
 
@@ -677,6 +698,8 @@ Chain.HyperEVM  // 999
 All chain parameters accept `ChainInput` — either a `Chain` enum value or a chain name string (`'ethereum'`, `'polygon'`, `'hyperevm'`, etc.).
 
 > Solana is **not** part of the `Chain` enum — Solana doesn't have a numeric chain ID. Use `web3.solana.addTxHint(signature)` instead.
+>
+> Canton is likewise outside the `Chain` enum — use `web3.canton.addTxHint(updateId, partyId?)`.
 
 ### `toChain(chainId)`
 
