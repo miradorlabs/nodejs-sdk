@@ -83,4 +83,17 @@ export const HINT_SERIALIZERS: Record<string, HintSerializer> = {
     };
     traceData.plugins.push(plugin);
   },
+
+  [HintType.CANTON_TX]: (traceData, data) => {
+    const hint = data as unknown as HintDataMap[typeof HintType.CANTON_TX];
+    const plugin: FlushTraceData_Plugin = {
+      cantonTxHints: {
+        updateId: hint.updateId,
+        partyId: hint.partyId,
+        details: hint.details,
+        timestamp: hint.timestamp,
+      },
+    };
+    traceData.plugins.push(plugin);
+  },
 };
