@@ -2,10 +2,10 @@
  * Hint serializer registry for Node.js SDK (ts-proto interface-based API).
  * Maps hint type strings to functions that serialize hint data into FlushTraceData.
  */
-import type { FlushTraceData, FlushTraceData_Plugin } from 'mirador-gateway-ingest/proto/gateway/ingest/v1/ingest_gateway';
+import type { FlushTraceData, FlushTraceData_Plugin } from '@miradorlabs/ingest-grpc/proto/gateway/ingest/v1/ingest_gateway';
 import { HintType } from '@miradorlabs/plugins';
 import type { HintDataMap } from '@miradorlabs/plugins';
-import { Chain as ProtoChain } from 'mirador-gateway-ingest/proto/gateway/ingest/v1/ingest_gateway';
+import { Chain as ProtoChain } from '@miradorlabs/ingest-grpc/proto/gateway/ingest/v1/ingest_gateway';
 import { CHAIN_MAP } from './chains';
 
 /** A function that serializes hint data into a FlushTraceData object */

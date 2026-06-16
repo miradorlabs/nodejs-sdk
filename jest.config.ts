@@ -20,7 +20,7 @@ const config: Config = {
     '^.+\\.tsx?$': 'ts-jest',
   },
   transformIgnorePatterns: [
-    'node_modules/(?!(mirador-gateway-ingest|@bufbuild/protobuf)/)'
+    'node_modules/(?!(@miradorlabs/ingest-grpc|@bufbuild/protobuf)/)'
   ],
 };
 

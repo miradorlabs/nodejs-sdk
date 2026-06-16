@@ -8,8 +8,8 @@ import type {
   KeepAliveResponse,
   CloseTraceRequest,
   CloseTraceResponse,
-} from 'mirador-gateway-ingest/proto/gateway/ingest/v1/ingest_gateway';
-import { IngestGatewayServiceClientImpl } from 'mirador-gateway-ingest/proto/gateway/ingest/v1/ingest_gateway';
+} from '@miradorlabs/ingest-grpc/proto/gateway/ingest/v1/ingest_gateway';
+import { IngestGatewayServiceClientImpl } from '@miradorlabs/ingest-grpc/proto/gateway/ingest/v1/ingest_gateway';
 import { NodeGrpcRpc } from '../grpc';
 import { Trace, NoopTrace } from './trace';
 import type { ClientOptions, TraceOptions, Logger, TraceCallbacks } from './types';
