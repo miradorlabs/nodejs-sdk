@@ -3,9 +3,9 @@ import { Client, Trace, NoopTrace, Chain, captureStackTrace, toChain, MiradorPro
 import type { ChainName } from '../src/ingest';
 import type { StackTrace, EIP1193Provider, Logger, TraceCallbacks } from '../src/ingest';
 import { NodeGrpcRpc } from '../src/grpc';
-import * as apiGateway from "mirador-gateway-ingest/proto/gateway/ingest/v1/ingest_gateway";
-import { Chain as ProtoChain } from "mirador-gateway-ingest/proto/gateway/ingest/v1/ingest_gateway";
-import { ResponseStatus_StatusCode } from "mirador-gateway-ingest/proto/gateway/common/v1/status";
+import * as apiGateway from "@miradorlabs/ingest-grpc/proto/gateway/ingest/v1/ingest_gateway";
+import { Chain as ProtoChain } from "@miradorlabs/ingest-grpc/proto/gateway/ingest/v1/ingest_gateway";
+import { ResponseStatus_StatusCode } from "@miradorlabs/ingest-grpc/proto/gateway/common/v1/status";
 
 // Mock the NodeGrpcRpc class
 jest.mock('../src/grpc');

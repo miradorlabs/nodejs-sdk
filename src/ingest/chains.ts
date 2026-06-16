@@ -1,7 +1,7 @@
 /**
  * Plugin Chain enum to proto Chain enum mapping (SDK-specific, depends on proto package)
  */
-import { Chain as ProtoChain } from 'mirador-gateway-ingest/proto/gateway/ingest/v1/ingest_gateway';
+import { Chain as ProtoChain } from '@miradorlabs/ingest-grpc/proto/gateway/ingest/v1/ingest_gateway';
 import { Chain } from '@miradorlabs/plugins';
 
 /**

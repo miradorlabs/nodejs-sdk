@@ -5,7 +5,7 @@ import dts from 'rollup-plugin-dts';
 import ts from 'typescript';
 
 /**
- * Transpiles the TypeScript-source proto stubs shipped by mirador-gateway-ingest.
+ * Transpiles the TypeScript-source proto stubs shipped by @miradorlabs/ingest-grpc.
  * That package publishes only `.ts` for the ts_proto-generated stubs (no compiled
  * `.js`), so they must be transpiled here to be bundled into the CJS output.
  * Without this, dist/index.js would `require()` a `.ts` file that Node's
@@ -15,7 +15,7 @@ function transpileDepTs() {
   return {
     name: 'transpile-dep-ts',
     transform(code, id) {
-      if (!id.includes('node_modules/mirador-gateway-ingest/') || !id.endsWith('.ts')) {
+      if (!id.includes('node_modules/@miradorlabs/ingest-grpc/') || !id.endsWith('.ts')) {
         return null;
       }
       const { outputText, sourceMapText } = ts.transpileModule(code, {
@@ -54,7 +54,7 @@ export default [
         sourceMap: true,
       }),
     ],
-    // mirador-gateway-ingest is intentionally NOT external: it ships its proto
+    // @miradorlabs/ingest-grpc is intentionally NOT external: it ships its proto
     // stubs as raw `.ts`, so they are bundled in (see transpileDepTs above).
     // @bufbuild/protobuf is a real npm package with a CJS entry — keep external.
     external: [
@@ -79,8 +79,8 @@ export default [
       '@grpc/grpc-js',
       'google-protobuf',
       '@miradorlabs/plugins',
-      'mirador-gateway-ingest',
-      /^mirador-gateway-ingest\/.*/,
+      '@miradorlabs/ingest-grpc',
+      /^@miradorlabs\/ingest-grpc\/.*/,
       'rxjs',
       /^rxjs\/.*/,
     ],

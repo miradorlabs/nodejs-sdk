@@ -35,7 +35,7 @@ npm run cli          # Run CLI tool for testing (requires MIRADOR_API_KEY env va
 - `index.ts` - `NodeGrpcRpc` class implementing gRPC transport with SSL and API key auth
 
 ### Proto Types
-The SDK uses types from `mirador-gateway-ingest`:
+The SDK uses types from `@miradorlabs/ingest-grpc`:
 - `CreateTraceRequest` / `CreateTraceResponse` - Main request/response types
 - `Event` - Event with `name`, `details`, and `timestamp` fields
 - `TxHashHint` - Transaction hint with `chain` (Chain enum), `txHash`, `details`, and `timestamp`
@@ -50,7 +50,7 @@ The SDK uses types from `mirador-gateway-ingest`:
 - Terminal method `create()` returns `Promise<string | undefined>` (trace ID or undefined on failure)
 
 ### External Dependencies
-- `mirador-gateway-ingest` - Protocol buffer definitions for the Mirador Gateway API
+- `@miradorlabs/ingest-grpc` - Protocol buffer definitions for the Mirador Gateway API
 - `@grpc/grpc-js` - gRPC client implementation
 - `rxjs` - Used for streaming support in gRPC layer
 

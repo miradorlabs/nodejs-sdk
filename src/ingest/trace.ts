@@ -12,8 +12,8 @@ import {
   type CloseTraceRequest,
   type CloseTraceResponse,
   type FlushTraceData,
-} from 'mirador-gateway-ingest/proto/gateway/ingest/v1/ingest_gateway';
-import { ResponseStatus_StatusCode } from 'mirador-gateway-ingest/proto/gateway/common/v1/status';
+} from '@miradorlabs/ingest-grpc/proto/gateway/ingest/v1/ingest_gateway';
+import { ResponseStatus_StatusCode } from '@miradorlabs/ingest-grpc/proto/gateway/common/v1/status';
 import type { TraceEvent, StackTrace, TraceCallbacks } from './types';
 import { Severity } from '@miradorlabs/plugins';
 import type { AddEventOptions, Logger } from '@miradorlabs/plugins';
