@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.1](https://github.com/miradorlabs/nodejs-sdk/compare/v2.3.0...v2.3.1) (2026-06-16)
+
+
+### Bug Fixes
+
+* **deps:** release [@miradorlabs](https://github.com/miradorlabs) grpc migration and security audit updates ([#76](https://github.com/miradorlabs/nodejs-sdk/issues/76)) ([254d7bc](https://github.com/miradorlabs/nodejs-sdk/commit/254d7bcfc0f7b461115c98cecc183031e45910df))
+
 ## [2.3.0](https://github.com/miradorlabs/nodejs-sdk/compare/v2.2.0...v2.3.0) (2026-06-02)
 
 
