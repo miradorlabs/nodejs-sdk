@@ -1,6 +1,7 @@
 {
   "name": "@miradorlabs/nodejs-sdk",
   "version": "2.3.1",
+  "packageManager": "pnpm@10.33.0",
   "description": "Node.js SDK for Mirador — cross-chain observability for blockchain applications.",
   "homepage": "https://mirador.org",
   "repository": {
@@ -78,7 +79,16 @@
     "google-protobuf": "^4.0.1",
     "rxjs": "^7.8.2"
   },
-  "overrides": {
-    "js-yaml": "^4.2.0"
+  "pnpm": {
+    "overrides": {
+      "js-yaml": "^4.2.0"
+    },
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ],
+    "ignoredBuiltDependencies": [
+      "protobufjs",
+      "unrs-resolver"
+    ]
   }
 }
