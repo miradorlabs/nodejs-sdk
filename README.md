@@ -803,20 +803,20 @@ import {
 ## Development
 
 ```bash
-npm install          # Install dependencies
-npm run build        # Build the SDK
-npm run lint         # Run linter
-npm test             # Run tests
-npm run test:watch   # Run tests in watch mode
-npm run test:coverage # Run tests with coverage
+pnpm install         # Install dependencies
+pnpm build           # Build the SDK
+pnpm lint            # Run linter
+pnpm test            # Run tests
+pnpm test:watch      # Run tests in watch mode
+pnpm test:coverage   # Run tests with coverage
 ```
 
 ### Release
 
 ```bash
-npm run release:patch  # 1.0.x
-npm run release:minor  # 1.x.0
-npm run release:major  # x.0.0
+pnpm release:patch  # 1.0.x
+pnpm release:minor  # 1.x.0
+pnpm release:major  # x.0.0
 ```
 
 ## Example CLI
@@ -825,7 +825,7 @@ An interactive CLI for testing the SDK is available in the [`example/`](./exampl
 
 ```bash
 # Run the CLI
-npm run cli
+pnpm cli
 
 # Example session
 mirador> create my_swap

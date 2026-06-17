@@ -29,8 +29,8 @@
 
 - [ ] My code follows the project's coding standards
 - [ ] I have added/updated tests for my changes
-- [ ] All tests pass locally (`npm test`)
-- [ ] I have run the linter (`npm run lint`)
+- [ ] All tests pass locally (`pnpm test`)
+- [ ] I have run the linter (`pnpm lint`)
 - [ ] No new warnings or errors introduced
 
 ### Documentation
@@ -49,7 +49,7 @@
 ### Test Environment
 
 - Node.js version:
-- npm version:
+- pnpm version:
 - OS:
 
 ### How to Test
@@ -63,7 +63,7 @@
 <!-- Paste relevant test output or screenshots -->
 
 ```text
-npm test output here
+pnpm test output here
 ```
 
 ## Breaking Changes
