@@ -14,12 +14,41 @@ import {
   type FlushTraceData,
 } from '@miradorlabs/ingest-grpc/proto/gateway/ingest/v1/ingest_gateway';
 import { ResponseStatus_StatusCode } from '@miradorlabs/ingest-grpc/proto/gateway/common/v1/status';
-import type { TraceEvent, StackTrace, TraceCallbacks } from './types';
+import type { TraceEvent, StackTrace, TraceCallbacks, SpanOptions, SpanEndOptions } from './types';
 import { Severity } from '@miradorlabs/plugins';
 import type { AddEventOptions, Logger } from '@miradorlabs/plugins';
 import type { MiradorPlugin, TraceContext, FlushBuilder } from '@miradorlabs/plugins';
 import { captureStackTrace, formatStackTrace } from './stacktrace';
 import { HINT_SERIALIZERS } from './hint-serializers';
+import { Span, NOOP_SPAN_ID } from './span';
+import { randomBytes } from 'crypto';
+
+/** A span lifecycle boundary buffered until the next flush. */
+interface PendingSpanStart {
+  spanId: string;
+  name: string;
+  parentSpanId?: string;
+  timestamp: Date;
+  attributes: { [key: string]: string };
+}
+interface PendingSpanEnd {
+  spanId: string;
+  timestamp: Date;
+  statusCode?: string;
+  statusMessage?: string;
+}
+
+/** Generate a W3C Trace Context span id (16 lowercase hex chars / 8 bytes, never all-zero). */
+function generateSpanId(): string {
+  for (;;) {
+    const hex = randomBytes(8).toString('hex');
+    if (hex !== NOOP_SPAN_ID) return hex;
+  }
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
 
 const PROTECTED_KEYS = new Set([
   'client', 'name', 'traceId', 'closed', 'flushedOnce', 'abandoned', 'closing',
@@ -29,10 +58,12 @@ const PROTECTED_KEYS = new Set([
   'keepAliveConsecutiveFailures', 'maxTraceLifetimeMs', 'lifetimeTimer',
   'maxQueueSize', 'callbacks', 'pluginOnFlush', 'pluginOnClose', 'pluginHasPending',
   'creationStackTrace', 'creationTimestamp',
+  'activeSpanIds', 'pendingSpanStarts', 'pendingSpanEnds',
   // Public methods
   'addAttribute', 'addAttributes', 'addTag', 'addTags', 'addEvent',
   'info', 'warn', 'error', 'addStackTrace', 'addExistingStackTrace',
   'flush', 'close', 'isClosed', 'getTraceId', '_initPlugins',
+  'startSpan', 'span', 'currentSpanId', 'recordEvent', '_spanEvent', '_endSpan', '_scheduleFlush',
 ]);
 
 /**
@@ -164,6 +195,11 @@ export class Trace {
   private pendingAttributes: { [key: string]: string } = {};
   private pendingTags: string[] = [];
   private pendingEvents: TraceEvent[] = [];
+  private pendingSpanStarts: PendingSpanStart[] = [];
+  private pendingSpanEnds: PendingSpanEnd[] = [];
+
+  // Stack of open span ids — events default to the innermost active span.
+  private activeSpanIds: string[] = [];
 
   // Flush infrastructure
   private microtaskScheduled: boolean = false;
@@ -277,7 +313,9 @@ export class Trace {
   private get pendingCount(): number {
     let count = Object.keys(this.pendingAttributes).length +
       this.pendingTags.length +
-      this.pendingEvents.length;
+      this.pendingEvents.length +
+      this.pendingSpanStarts.length +
+      this.pendingSpanEnds.length;
     for (const hasPending of this.pluginHasPending) {
       try { if (hasPending()) count++; } catch { /* ignore */ }
     }
@@ -413,11 +451,20 @@ export class Trace {
    * @returns This trace builder for chaining
    */
   addEvent(eventName: string, details?: string | object, options?: AddEventOptions): this {
+    this.recordEvent(this.currentSpanId(), eventName, details, options);
+    return this;
+  }
+
+  /**
+   * Record an event, tagged with the given span id ("" / undefined = trace-level).
+   * Shared by addEvent (innermost active span) and Span.addEvent (explicit span).
+   */
+  private recordEvent(spanId: string | undefined, eventName: string, details?: string | object, options?: AddEventOptions): void {
     if (this.closed) {
       this.client.logger.warn('[MiradorTrace] Trace is closed, ignoring addEvent');
-      return this;
+      return;
     }
-    if (this.isQueueFull()) return this;
+    if (this.isQueueFull()) return;
 
     // Build details object with optional stack trace
     let finalDetails: string | undefined;
@@ -447,9 +494,98 @@ export class Trace {
       details: finalDetails,
       timestamp: options?.timestamp || new Date(),
       severity: options?.severity,
+      spanId,
     });
     this.scheduleFlush();
-    return this;
+  }
+
+  /** Innermost currently-open span id, or undefined when none is active. */
+  private currentSpanId(): string | undefined {
+    return this.activeSpanIds.length > 0 ? this.activeSpanIds[this.activeSpanIds.length - 1] : undefined;
+  }
+
+  /**
+   * Open a span within the trace. Returns a {@link Span} handle; call `span.end()`
+   * to close it. The span's parent defaults to the innermost active span (or the
+   * trace root when none is active); override with `options.parentSpanId`.
+   *
+   * Events recorded while the span is open (via `trace.info()` etc.) nest under
+   * it; use the returned span's own methods for precise control in async code.
+   */
+  startSpan(name: string, options?: SpanOptions): Span {
+    if (this.closed || this.abandoned) {
+      this.client.logger.warn('[MiradorTrace] Trace is closed, ignoring startSpan');
+      return new Span(this, NOOP_SPAN_ID, {}, true);
+    }
+    if (this.isQueueFull()) return new Span(this, NOOP_SPAN_ID, {}, true);
+
+    const spanId = generateSpanId();
+    const parentSpanId = options?.parentSpanId ?? this.currentSpanId();
+    const attributes: { [key: string]: string } = {};
+    if (options?.attributes) {
+      for (const [key, value] of Object.entries(options.attributes)) {
+        attributes[key] = typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value);
+      }
+    }
+
+    this.pendingSpanStarts.push({ spanId, name, parentSpanId, timestamp: new Date(), attributes });
+    this.activeSpanIds.push(spanId);
+    this.scheduleFlush();
+    return new Span(this, spanId, attributes);
+  }
+
+  /**
+   * Run `fn` inside a span that auto-ends when it returns (status OK) or throws
+   * (status ERROR). Supports sync and async functions; the span is passed to `fn`
+   * for precise event nesting. Returns whatever `fn` returns.
+   */
+  span<T>(name: string, fn: (span: Span) => T): T {
+    const span = this.startSpan(name);
+    try {
+      const result = fn(span);
+      if (result !== null && typeof result === 'object' && typeof (result as { then?: unknown }).then === 'function') {
+        return (result as unknown as Promise<unknown>).then(
+          (value) => { span.end({ status: 'OK' }); return value; },
+          (err) => { span.end({ status: 'ERROR', message: errorMessage(err) }); throw err; },
+        ) as unknown as T;
+      }
+      span.end({ status: 'OK' });
+      return result;
+    } catch (err) {
+      span.end({ status: 'ERROR', message: errorMessage(err) });
+      throw err;
+    }
+  }
+
+  /** @internal Record an event explicitly scoped to a span (used by Span). */
+  _spanEvent(spanId: string, eventName: string, details?: string | object, options?: AddEventOptions): void {
+    this.recordEvent(spanId, eventName, details, options);
+  }
+
+  /** @internal Close a span (used by Span.end). */
+  _endSpan(spanId: string, options?: SpanEndOptions): void {
+    if (this.closed || this.abandoned) {
+      this.client.logger.warn('[MiradorTrace] Trace is closed, ignoring span end');
+      return;
+    }
+    if (this.isQueueFull()) return;
+
+    const idx = this.activeSpanIds.lastIndexOf(spanId);
+    if (idx !== -1) this.activeSpanIds.splice(idx, 1);
+
+    this.pendingSpanEnds.push({
+      spanId,
+      timestamp: new Date(),
+      statusCode: options?.status,
+      statusMessage: options?.message,
+    });
+    this.scheduleFlush();
+  }
+
+  /** @internal Schedule a flush after a span attribute mutation (used by Span). */
+  _scheduleFlush(): void {
+    if (this.closed || this.abandoned) return;
+    this.scheduleFlush();
   }
 
   /**
@@ -561,7 +697,9 @@ export class Trace {
     const hasCoreData =
       Object.keys(this.pendingAttributes).length > 0 ||
       this.pendingTags.length > 0 ||
-      this.pendingEvents.length > 0;
+      this.pendingEvents.length > 0 ||
+      this.pendingSpanStarts.length > 0 ||
+      this.pendingSpanEnds.length > 0;
 
     const hasPluginData = this.pluginHasPending.some(fn => {
       try { return fn(); } catch { return false; }
@@ -587,6 +725,8 @@ export class Trace {
       const itemCount = this.countItems(traceData);
       this.pendingAttributes = {};
       this.pendingTags = [];
+      this.pendingSpanStarts = [];
+      this.pendingSpanEnds = [];
       this.pendingEvents = savedEvents;
 
       this.enqueueFlush(traceData, itemCount);
@@ -612,7 +752,9 @@ export class Trace {
     return (traceData.events?.length ?? 0) +
       (traceData.plugins?.length ?? 0) +
       (traceData.attributes?.length ?? 0) +
-      (traceData.tags?.length ?? 0);
+      (traceData.tags?.length ?? 0) +
+      (traceData.spanStarts?.length ?? 0) +
+      (traceData.spanEnds?.length ?? 0);
   }
 
   /**
@@ -801,6 +943,20 @@ export class Trace {
         details: e.details,
         timestamp: e.timestamp,
         severity: toProtoSeverity(e.severity),
+        spanId: e.spanId,
+      })),
+      spanStarts: this.pendingSpanStarts.map((s) => ({
+        spanId: s.spanId,
+        parentSpanId: s.parentSpanId,
+        name: s.name,
+        timestamp: s.timestamp,
+        attributes: { ...s.attributes },
+      })),
+      spanEnds: this.pendingSpanEnds.map((s) => ({
+        spanId: s.spanId,
+        timestamp: s.timestamp,
+        statusCode: s.statusCode,
+        statusMessage: s.statusMessage,
       })),
       plugins: [],
     };
@@ -864,6 +1020,8 @@ export class Trace {
     this.pendingAttributes = {};
     this.pendingTags = [];
     this.pendingEvents = [];
+    this.pendingSpanStarts = [];
+    this.pendingSpanEnds = [];
   }
 
   /**
@@ -1117,6 +1275,8 @@ export class NoopTrace extends Trace {
   addEvent(): this { return this; }
   addStackTrace(): this { return this; }
   addExistingStackTrace(): this { return this; }
+  startSpan(): Span { return new Span(this, NOOP_SPAN_ID, {}, true); }
+  span<T>(_name: string, fn: (span: Span) => T): T { return fn(new Span(this, NOOP_SPAN_ID, {}, true)); }
   flush(): void {}
   async close(): Promise<void> {}
   /** Sentinel trace ID — not a valid trace, used only for NoopTrace */

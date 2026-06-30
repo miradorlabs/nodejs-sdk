@@ -3103,6 +3103,115 @@ describe('Client', () => {
       expect(mockApiGatewayClient.FlushTrace.mock.calls.length).toBeGreaterThanOrEqual(2);
     });
   });
+
+  describe('spans', () => {
+    // Aggregate across all flush calls so tests don't depend on flush batching.
+    const allData = () => mockApiGatewayClient.FlushTrace.mock.calls.map(c => c[0].data!);
+    const allSpanStarts = () => allData().flatMap(d => d.spanStarts ?? []);
+    const allSpanEnds = () => allData().flatMap(d => d.spanEnds ?? []);
+    const allEvents = () => allData().flatMap(d => d.events ?? []);
+    const settle = async () => { await flushMicrotasks(); await flushPromises(); };
+
+    it('emits SpanStart and SpanEnd for a span', async () => {
+      const trace = client.trace({ name: 't', captureStackTrace: false });
+      const span = trace.startSpan('swap', { attributes: { dex: 'uniswap' } });
+      span.end({ status: 'OK' });
+      trace.flush();
+      await settle();
+
+      const starts = allSpanStarts();
+      expect(starts).toHaveLength(1);
+      expect(starts[0].spanId).toMatch(/^[0-9a-f]{16}$/);
+      expect(starts[0].spanId).toBe(span.id);
+      expect(starts[0].name).toBe('swap');
+      expect(starts[0].parentSpanId).toBeUndefined();
+      expect(starts[0].attributes).toEqual({ dex: 'uniswap' });
+
+      const ends = allSpanEnds();
+      expect(ends).toHaveLength(1);
+      expect(ends[0].spanId).toBe(span.id);
+      expect(ends[0].statusCode).toBe('OK');
+    });
+
+    it('parents a child span to its parent span', async () => {
+      const trace = client.trace({ captureStackTrace: false });
+      const parent = trace.startSpan('parent');
+      const child = parent.startSpan('child');
+      child.end();
+      parent.end();
+      trace.flush();
+      await settle();
+
+      const child2 = allSpanStarts().find(s => s.name === 'child')!;
+      expect(child2.parentSpanId).toBe(parent.id);
+      const parent2 = allSpanStarts().find(s => s.name === 'parent')!;
+      expect(parent2.parentSpanId).toBeUndefined();
+    });
+
+    it('tags ambient events with the active span and leaves others trace-level', async () => {
+      const trace = client.trace({ captureStackTrace: false });
+      const span = trace.startSpan('op');
+      trace.info('inside');
+      span.end();
+      trace.info('outside');
+      trace.flush();
+      await settle();
+
+      expect(allEvents().find(e => e.name === 'inside')!.spanId).toBe(span.id);
+      expect(allEvents().find(e => e.name === 'outside')!.spanId).toBeUndefined();
+    });
+
+    it('span.addEvent tags the event with that span id', async () => {
+      const trace = client.trace({ captureStackTrace: false });
+      const span = trace.startSpan('op');
+      span.addEvent('explicit');
+      span.end();
+      trace.flush();
+      await settle();
+
+      expect(allEvents().find(e => e.name === 'explicit')!.spanId).toBe(span.id);
+    });
+
+    it('span(name, fn) auto-ends OK and returns the value (sync)', async () => {
+      const trace = client.trace({ captureStackTrace: false });
+      const result = trace.span('work', (s) => { s.addEvent('step'); return 42; });
+      expect(result).toBe(42);
+      trace.flush();
+      await settle();
+
+      expect(allSpanStarts()).toHaveLength(1);
+      expect(allSpanEnds()[0].statusCode).toBe('OK');
+      expect(allEvents().find(e => e.name === 'step')!.spanId).toBe(allSpanStarts()[0].spanId);
+    });
+
+    it('span(name, fn) sets ERROR + message and rethrows', async () => {
+      const trace = client.trace({ captureStackTrace: false });
+      expect(() => trace.span('boom', () => { throw new Error('nope'); })).toThrow('nope');
+      trace.flush();
+      await settle();
+
+      const ends = allSpanEnds();
+      expect(ends[0].statusCode).toBe('ERROR');
+      expect(ends[0].statusMessage).toBe('nope');
+    });
+
+    it('span(name, fn) awaits an async fn and ends OK', async () => {
+      const trace = client.trace({ captureStackTrace: false });
+      const result = await trace.span('async-work', async (s) => { s.addEvent('async-step'); return 'done'; });
+      expect(result).toBe('done');
+      trace.flush();
+      await settle();
+
+      expect(allSpanEnds().some(e => e.statusCode === 'OK')).toBe(true);
+    });
+
+    it('NoopTrace spans are no-ops', () => {
+      const noop = new NoopTrace();
+      const span = noop.startSpan('x');
+      expect(() => { span.addEvent('y'); span.setAttribute('k', 'v'); span.end(); }).not.toThrow();
+      expect(noop.span('z', (s) => { s.addEvent('e'); return 99; })).toBe(99);
+    });
+  });
 });
 
 describe('toChain', () => {

@@ -79,6 +79,34 @@ export interface TraceEvent {
   details?: string;
   timestamp: Date;
   severity?: Severity;
+  /** Owning span id ("" / undefined = trace-level). */
+  spanId?: string;
+}
+
+/** OTLP span status code set on EndSpan. */
+export type SpanStatus = 'UNSET' | 'OK' | 'ERROR';
+
+/**
+ * Options for opening a span via `trace.startSpan()` / `span.startSpan()`.
+ */
+export interface SpanOptions {
+  /**
+   * Explicit parent span id. Defaults to the currently-active span (if any),
+   * otherwise the span is a root of the trace.
+   */
+  parentSpanId?: string;
+  /** Initial span attributes (objects are stringified). */
+  attributes?: { [key: string]: string | number | boolean | object };
+}
+
+/**
+ * Options for ending a span via `span.end()`.
+ */
+export interface SpanEndOptions {
+  /** OTLP status: 'OK', 'ERROR', or 'UNSET' (default — omitted). */
+  status?: SpanStatus;
+  /** Optional status message (typically an error description). */
+  message?: string;
 }
 
 /**
