@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.4.0](https://github.com/miradorlabs/nodejs-sdk/compare/v2.3.1...v2.4.0) (2026-07-01)
+
+
+### Features
+
+* **span:** add span support to nodejs sdk ([#83](https://github.com/miradorlabs/nodejs-sdk/issues/83)) ([32af3bf](https://github.com/miradorlabs/nodejs-sdk/commit/32af3bf8e5259c33aaa635dffd0077fa7d7896a1))
+
 ## [2.3.1](https://github.com/miradorlabs/nodejs-sdk/compare/v2.3.0...v2.3.1) (2026-06-16)
 
 
