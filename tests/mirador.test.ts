@@ -3130,7 +3130,7 @@ describe('Client', () => {
       const ends = allSpanEnds();
       expect(ends).toHaveLength(1);
       expect(ends[0].spanId).toBe(span.id);
-      expect(ends[0].statusCode).toBe('OK');
+      expect(ends[0].status).toBe(apiGateway.SpanStatusCode.SPAN_STATUS_CODE_OK);
     });
 
     it('parents a child span to its parent span', async () => {
@@ -3180,7 +3180,7 @@ describe('Client', () => {
       await settle();
 
       expect(allSpanStarts()).toHaveLength(1);
-      expect(allSpanEnds()[0].statusCode).toBe('OK');
+      expect(allSpanEnds()[0].status).toBe(apiGateway.SpanStatusCode.SPAN_STATUS_CODE_OK);
       expect(allEvents().find(e => e.name === 'step')!.spanId).toBe(allSpanStarts()[0].spanId);
     });
 
@@ -3191,7 +3191,7 @@ describe('Client', () => {
       await settle();
 
       const ends = allSpanEnds();
-      expect(ends[0].statusCode).toBe('ERROR');
+      expect(ends[0].status).toBe(apiGateway.SpanStatusCode.SPAN_STATUS_CODE_ERROR);
       expect(ends[0].statusMessage).toBe('nope');
     });
 
@@ -3202,11 +3202,11 @@ describe('Client', () => {
       trace.flush();
       await settle();
 
-      expect(allSpanEnds().some(e => e.statusCode === 'OK')).toBe(true);
+      expect(allSpanEnds().some(e => e.status === apiGateway.SpanStatusCode.SPAN_STATUS_CODE_OK)).toBe(true);
     });
 
     it('NoopTrace spans are no-ops', () => {
-      const noop = new NoopTrace();
+      const noop: Trace = new NoopTrace();
       const span = noop.startSpan('x');
       expect(() => { span.addEvent('y'); span.setAttribute('k', 'v'); span.end(); }).not.toThrow();
       expect(noop.span('z', (s) => { s.addEvent('e'); return 99; })).toBe(99);

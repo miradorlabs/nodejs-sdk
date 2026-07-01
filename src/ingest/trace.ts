@@ -5,6 +5,7 @@
  */
 import {
   Event_Severity,
+  SpanStatusCode,
   type FlushTraceRequest,
   type FlushTraceResponse,
   type KeepAliveRequest,
@@ -14,7 +15,7 @@ import {
   type FlushTraceData,
 } from '@miradorlabs/ingest-grpc/proto/gateway/ingest/v1/ingest_gateway';
 import { ResponseStatus_StatusCode } from '@miradorlabs/ingest-grpc/proto/gateway/common/v1/status';
-import type { TraceEvent, StackTrace, TraceCallbacks, SpanOptions, SpanEndOptions } from './types';
+import type { TraceEvent, StackTrace, TraceCallbacks, SpanOptions, SpanEndOptions, SpanStatus } from './types';
 import { Severity } from '@miradorlabs/plugins';
 import type { AddEventOptions, Logger } from '@miradorlabs/plugins';
 import type { MiradorPlugin, TraceContext, FlushBuilder } from '@miradorlabs/plugins';
@@ -34,7 +35,7 @@ interface PendingSpanStart {
 interface PendingSpanEnd {
   spanId: string;
   timestamp: Date;
-  statusCode?: string;
+  status?: SpanStatus;
   statusMessage?: string;
 }
 
@@ -48,6 +49,15 @@ function generateSpanId(): string {
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+/** Map the ergonomic SpanStatus string to the proto SpanStatusCode enum. */
+function toSpanStatusCode(status?: SpanStatus): SpanStatusCode {
+  switch (status) {
+    case 'OK': return SpanStatusCode.SPAN_STATUS_CODE_OK;
+    case 'ERROR': return SpanStatusCode.SPAN_STATUS_CODE_ERROR;
+    default: return SpanStatusCode.SPAN_STATUS_CODE_UNSPECIFIED; // 'UNSET' / undefined
+  }
 }
 
 const PROTECTED_KEYS = new Set([
@@ -576,7 +586,7 @@ export class Trace {
     this.pendingSpanEnds.push({
       spanId,
       timestamp: new Date(),
-      statusCode: options?.status,
+      status: options?.status,
       statusMessage: options?.message,
     });
     this.scheduleFlush();
@@ -955,7 +965,7 @@ export class Trace {
       spanEnds: this.pendingSpanEnds.map((s) => ({
         spanId: s.spanId,
         timestamp: s.timestamp,
-        statusCode: s.statusCode,
+        status: toSpanStatusCode(s.status),
         statusMessage: s.statusMessage,
       })),
       plugins: [],
