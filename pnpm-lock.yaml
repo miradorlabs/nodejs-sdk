@@ -18,8 +18,8 @@ importers:
         specifier: ^1.14.1
         version: 1.14.4
       '@miradorlabs/ingest-grpc':
-        specifier: 1.0.1
-        version: 1.0.1(@grpc/grpc-js@1.14.4)(google-protobuf@4.0.2)
+        specifier: 1.1.0
+        version: 1.1.0(@grpc/grpc-js@1.14.4)(google-protobuf@4.0.2)
       '@miradorlabs/plugins':
         specifier: 1.3.0
         version: 1.3.0
@@ -709,8 +709,8 @@ packages:
   '@js-sdsl/ordered-map@4.4.2':
     resolution: {integrity: sha512-iUKgm52T8HOE/makSxjqoWhe95ZJA1/G1sYsGev2JDKUSS14KAgg1LHb+Ba+IPow0xflbnSkOsZcO08C7w1gYw==}
 
-  '@miradorlabs/ingest-grpc@1.0.1':
-    resolution: {integrity: sha512-aiP82Diy2JAULGzTZ8bSSdgta6N7sSU5gMd87gYnVvHFinW6wwFpXUeASe5Uv9OsMxhKqs3AWhL5ly/VvNrVcg==}
+  '@miradorlabs/ingest-grpc@1.1.0':
+    resolution: {integrity: sha512-sXyPS/2/t8XODOacnRhg5P+aPkPKXdJE+lm7paFNOAJTMYKyz0fyVMAHm+i0iZRlaLKf215IcFHN1Kx3KyiPtg==}
     peerDependencies:
       '@grpc/grpc-js': ^1.14.1
       google-protobuf: ^4.0.1
@@ -3249,7 +3249,7 @@ snapshots:
 
   '@js-sdsl/ordered-map@4.4.2': {}
 
-  '@miradorlabs/ingest-grpc@1.0.1(@grpc/grpc-js@1.14.4)(google-protobuf@4.0.2)':
+  '@miradorlabs/ingest-grpc@1.1.0(@grpc/grpc-js@1.14.4)(google-protobuf@4.0.2)':
     dependencies:
       '@grpc/grpc-js': 1.14.4
       google-protobuf: 4.0.2
