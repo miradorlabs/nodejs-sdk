@@ -8,6 +8,9 @@ export { Trace, NoopTrace } from './trace';
 export { Span } from './span';
 export { MiradorProvider } from './provider';
 
+// API key validation
+export { MiradorApiKeyError, WEB_KEY_PREFIX, SERVER_KEY_PREFIX } from './api-key';
+
 // Stack trace utilities
 export { captureStackTrace, formatStackTrace, formatStackTraceReadable } from './stacktrace';
 

@@ -11,6 +11,7 @@ import type {
 } from '@miradorlabs/ingest-grpc/proto/gateway/ingest/v1/ingest_gateway';
 import { IngestGatewayServiceClientImpl } from '@miradorlabs/ingest-grpc/proto/gateway/ingest/v1/ingest_gateway';
 import { NodeGrpcRpc } from '../grpc';
+import { assertServerApiKey, hasApiKey } from './api-key';
 import { Trace, NoopTrace } from './trace';
 import type { ClientOptions, TraceOptions, Logger, TraceCallbacks } from './types';
 import type { MiradorPlugin, MergedPluginMethods } from '@miradorlabs/plugins';
@@ -58,6 +59,8 @@ export class Client<P extends readonly MiradorPlugin<object>[] = []> {
   private callTimeoutMs: number;
   private rpc: NodeGrpcRpc;
   private grpcClient: IngestGatewayServiceClientImpl;
+  /** No API key was supplied — every RPC is a no-op and `trace()` returns a NoopTrace. */
+  private readonly disabled: boolean;
 
   /** @internal */ readonly logger: Logger;
   /** @internal */ readonly callbacks?: TraceCallbacks;
@@ -94,8 +97,25 @@ export class Client<P extends readonly MiradorPlugin<object>[] = []> {
       this.logger = NOOP_LOGGER;
     }
 
+    // Validate before any request is made. A malformed key can only be rejected
+    // anonymously by the gateway, so catch it here where the cause is knowable.
+    if (hasApiKey(apiKey)) {
+      assertServerApiKey(apiKey);
+      this.disabled = false;
+    } else {
+      this.disabled = true;
+      this.logger.warn('[mirador] no API key provided — tracing is disabled');
+    }
+
     this.rpc = new NodeGrpcRpc(this.apiUrl, apiKey, options?.useSsl ?? true);
     this.grpcClient = new IngestGatewayServiceClientImpl(this.rpc);
+  }
+
+  /** Build a NoopTrace with plugin methods merged, for sampled-out or disabled clients. */
+  private noopTrace(): Trace & MergedPluginMethods<[...P], Trace> {
+    const noop = new NoopTrace();
+    noop._initPlugins(this.plugins as unknown as MiradorPlugin<object>[]);
+    return noop as Trace & MergedPluginMethods<[...P], Trace>;
   }
 
   /**
@@ -103,6 +123,7 @@ export class Client<P extends readonly MiradorPlugin<object>[] = []> {
    * @internal
    */
   async _flushTrace(request: FlushTraceRequest): Promise<FlushTraceResponse> {
+    if (this.disabled) return { status: undefined };
     return await this.grpcClient.FlushTrace(request);
   }
 
@@ -111,6 +132,7 @@ export class Client<P extends readonly MiradorPlugin<object>[] = []> {
    * @internal
    */
   async _keepAlive(request: KeepAliveRequest): Promise<KeepAliveResponse> {
+    if (this.disabled) return { accepted: false };
     return await this.grpcClient.KeepAlive(request);
   }
 
@@ -119,6 +141,7 @@ export class Client<P extends readonly MiradorPlugin<object>[] = []> {
    * @internal
    */
   async _closeTrace(request: CloseTraceRequest): Promise<CloseTraceResponse> {
+    if (this.disabled) return { accepted: false };
     return await this.grpcClient.CloseTrace(request);
   }
 
@@ -141,19 +164,20 @@ export class Client<P extends readonly MiradorPlugin<object>[] = []> {
    * @returns A Trace builder instance (or NoopTrace if sampled out), with plugin methods merged
    */
   trace(options?: TraceOptions): Trace & MergedPluginMethods<[...P], Trace> {
+    // No API key: never touch the network.
+    if (this.disabled) {
+      return this.noopTrace();
+    }
+
     // Sampling: check if this trace should be sampled out
     const traceOptions = options ?? {};
     if (this.sampler) {
       if (!this.sampler(traceOptions)) {
-        const noop = new NoopTrace();
-        noop._initPlugins(this.plugins as unknown as MiradorPlugin<object>[]);
-        return noop as Trace & MergedPluginMethods<[...P], Trace>;
+        return this.noopTrace();
       }
     } else if (this.sampleRate < 1) {
       if (Math.random() >= this.sampleRate) {
-        const noop = new NoopTrace();
-        noop._initPlugins(this.plugins as unknown as MiradorPlugin<object>[]);
-        return noop as Trace & MergedPluginMethods<[...P], Trace>;
+        return this.noopTrace();
       }
     }
 

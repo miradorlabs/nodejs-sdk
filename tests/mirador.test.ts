@@ -44,7 +44,7 @@ describe('Client', () => {
       .mockImplementation(() => mockApiGatewayClient);
 
     // Create a new Client instance with debug logging and Web3Plugin so console spies capture output
-    client = new Client("test-api-key", { debug: true, plugins: [Web3Plugin()] });
+    client = new Client("mir_srv_test-api-key", { debug: true, plugins: [Web3Plugin()] });
   });
 
   afterEach(() => {
@@ -61,9 +61,9 @@ describe('Client', () => {
 
   describe('constructor', () => {
     it('should create a Client instance with API key', () => {
-      const c = new Client('my-api-key');
+      const c = new Client('mir_srv_my-api-key');
       expect(c).toBeInstanceOf(Client);
-      expect(c.apiKey).toBe('my-api-key');
+      expect(c.apiKey).toBe('mir_srv_my-api-key');
     });
 
     it('should create a Client instance without API key', () => {
@@ -73,13 +73,13 @@ describe('Client', () => {
     });
 
     it('should initialize NodeGrpcRpc with the correct URL and API key', () => {
-      const apiKey = 'test-key';
+      const apiKey = 'mir_srv_test-key';
       new Client(apiKey);
       expect(NodeGrpcRpc).toHaveBeenCalledWith('ingest.mirador.org:443', apiKey, true);
     });
 
     it('should use custom API URL if provided', () => {
-      const apiKey = 'test-key';
+      const apiKey = 'mir_srv_test-key';
       const customUrl = 'custom-gateway.example.com:50053';
       new Client(apiKey, { apiUrl: customUrl });
       expect(NodeGrpcRpc).toHaveBeenCalledWith(customUrl, apiKey, true);
@@ -507,9 +507,11 @@ describe('Client', () => {
       mockApiGatewayClient.FlushTrace.mockResolvedValue(mockResponse);
 
       // All supported chain names
-      const chainNames: ChainName[] = ['ethereum', 'polygon', 'arbitrum', 'base', 'optimism', 'bsc'];
+      const chainNames: ChainName[] = ['ethereum', 'polygon', 'arbitrum', 'base', 'optimism', 'bsc', 'hyperevm'];
 
-      // Expected Chain enum values for each chain name
+      // Expected Chain enum values for each chain name.
+      // HyperEVM has no entry in the deprecated proto Chain enum, so it maps to
+      // CHAIN_UNSPECIFIED — its identity travels in chain_id instead.
       const expectedChainEnums: Record<ChainName, ProtoChain> = {
         ethereum: ProtoChain.CHAIN_ETHEREUM,
         polygon: ProtoChain.CHAIN_POLYGON,
@@ -517,6 +519,19 @@ describe('Client', () => {
         base: ProtoChain.CHAIN_BASE,
         optimism: ProtoChain.CHAIN_OPTIMISM,
         bsc: ProtoChain.CHAIN_BSC,
+        hyperevm: ProtoChain.CHAIN_UNSPECIFIED,
+      };
+
+      // chain_id is the authoritative field — it is the only thing that
+      // distinguishes HyperEVM from an unrecognized chain.
+      const expectedChainIds: Record<ChainName, Chain> = {
+        ethereum: Chain.Ethereum,
+        polygon: Chain.Polygon,
+        arbitrum: Chain.Arbitrum,
+        base: Chain.Base,
+        optimism: Chain.Optimism,
+        bsc: Chain.BSC,
+        hyperevm: Chain.HyperEVM,
       };
 
       for (const chainName of chainNames) {
@@ -529,13 +544,15 @@ describe('Client', () => {
         await flushPromises();
 
         const calls = mockApiGatewayClient.FlushTrace.mock.calls[0][0];
-        expect(calls.data?.plugins?.find(p => p.evmTxHints)?.evmTxHints?.chain).toBe(expectedChainEnums[chainName]);
+        const evmTxHints = calls.data?.plugins?.find(p => p.evmTxHints)?.evmTxHints;
+        expect(evmTxHints?.chain).toBe(expectedChainEnums[chainName]);
+        expect(evmTxHints?.chainId).toBe(expectedChainIds[chainName]);
       }
     });
 
     it('should have CHAIN_MAP entries for all ChainName values', () => {
       // This test ensures ChainName type and CHAIN_MAP stay in sync
-      const allChainNames: ChainName[] = ['ethereum', 'polygon', 'arbitrum', 'base', 'optimism', 'bsc'];
+      const allChainNames: ChainName[] = ['ethereum', 'polygon', 'arbitrum', 'base', 'optimism', 'bsc', 'hyperevm'];
 
       // Verify we can create a trace with each chain name without throwing
       for (const chainName of allChainNames) {
@@ -1468,13 +1485,13 @@ describe('Client', () => {
     });
 
     it('should construct Client with just an API key', () => {
-      const c = new Client('my-key');
-      expect(c.apiKey).toBe('my-key');
+      const c = new Client('mir_srv_my-key');
+      expect(c.apiKey).toBe('mir_srv_my-key');
     });
 
     it('should construct Client with API key and options', () => {
-      const c = new Client('my-key', { apiUrl: 'x' });
-      expect(c.apiKey).toBe('my-key');
+      const c = new Client('mir_srv_my-key', { apiUrl: 'x' });
+      expect(c.apiKey).toBe('mir_srv_my-key');
       expect(c.apiUrl).toBe('x');
     });
 
@@ -1663,7 +1680,7 @@ describe('Client', () => {
     });
 
     it('should flow provider from Web3Plugin to trace', async () => {
-      const c = new Client('key', { plugins: [Web3Plugin({ provider: ethProvider })] });
+      const c = new Client('mir_srv_key', { plugins: [Web3Plugin({ provider: ethProvider })] });
 
       // Re-mock after new Client construction
       jest
@@ -1676,7 +1693,7 @@ describe('Client', () => {
     });
 
     it('should allow setProvider to override Web3Plugin provider', async () => {
-      const c = new Client('key', { plugins: [Web3Plugin({ provider: polygonProvider })] });
+      const c = new Client('mir_srv_key', { plugins: [Web3Plugin({ provider: polygonProvider })] });
 
       jest
         .spyOn(apiGateway, 'IngestGatewayServiceClientImpl')
@@ -2623,7 +2640,7 @@ describe('Client', () => {
 
   describe('logger abstraction', () => {
     it('should use noop logger by default (no console output)', async () => {
-      const silentClient = new Client('test-key');
+      const silentClient = new Client('mir_srv_test-key');
       mockApiGatewayClient.FlushTrace.mockResolvedValue({
         status: { code: ResponseStatus_StatusCode.STATUS_CODE_INTERNAL_ERROR, errorMessage: 'fail' },
       });
@@ -2640,7 +2657,7 @@ describe('Client', () => {
     });
 
     it('should use console logger when debug: true', async () => {
-      const debugClient = new Client('test-key', { debug: true });
+      const debugClient = new Client('mir_srv_test-key', { debug: true });
       mockApiGatewayClient.FlushTrace.mockResolvedValue({
         status: { code: ResponseStatus_StatusCode.STATUS_CODE_INTERNAL_ERROR, errorMessage: 'fail' },
       });
@@ -2661,7 +2678,7 @@ describe('Client', () => {
         warn: jest.fn(),
         error: jest.fn(),
       };
-      const customClient = new Client('test-key', { logger: customLogger });
+      const customClient = new Client('mir_srv_test-key', { logger: customLogger });
       mockApiGatewayClient.FlushTrace.mockResolvedValue({
         status: { code: ResponseStatus_StatusCode.STATUS_CODE_INTERNAL_ERROR, errorMessage: 'custom fail' },
       });
@@ -2685,7 +2702,7 @@ describe('Client', () => {
   describe('TraceCallbacks', () => {
     it('should invoke onFlushed after successful flush', async () => {
       const onFlushed = jest.fn();
-      const cbClient = new Client('test-key', { callbacks: { onFlushed } });
+      const cbClient = new Client('mir_srv_test-key', { callbacks: { onFlushed } });
       mockApiGatewayClient.FlushTrace.mockResolvedValue({
         status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
       });
@@ -2701,7 +2718,7 @@ describe('Client', () => {
 
     it('should invoke onFlushError when flush fails after retries', async () => {
       const onFlushError = jest.fn();
-      const cbClient = new Client('test-key', { callbacks: { onFlushError } });
+      const cbClient = new Client('mir_srv_test-key', { callbacks: { onFlushError } });
       const grpcError = Object.assign(new Error('unavailable'), { code: 14 });
       mockApiGatewayClient.FlushTrace.mockRejectedValue(grpcError);
 
@@ -2714,7 +2731,7 @@ describe('Client', () => {
 
     it('should invoke onClosed when trace is closed', async () => {
       const onClosed = jest.fn();
-      const cbClient = new Client('test-key', { callbacks: { onClosed } });
+      const cbClient = new Client('mir_srv_test-key', { callbacks: { onClosed } });
       mockApiGatewayClient.FlushTrace.mockResolvedValue({
         status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
       });
@@ -2733,7 +2750,7 @@ describe('Client', () => {
 
     it('should invoke onDropped when queue is full', async () => {
       const onDropped = jest.fn();
-      const cbClient = new Client('test-key', { debug: true, callbacks: { onDropped } });
+      const cbClient = new Client('mir_srv_test-key', { debug: true, callbacks: { onDropped } });
 
       const trace = cbClient.trace({ name: 'drop', captureStackTrace: false, maxQueueSize: 3 });
       trace.addTag('a');
@@ -2749,7 +2766,7 @@ describe('Client', () => {
       const throwingCallback: TraceCallbacks = {
         onFlushed: () => { throw new Error('callback crash'); },
       };
-      const cbClient = new Client('test-key', { callbacks: throwingCallback });
+      const cbClient = new Client('mir_srv_test-key', { callbacks: throwingCallback });
       mockApiGatewayClient.FlushTrace.mockResolvedValue({
         status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
       });
@@ -2767,7 +2784,7 @@ describe('Client', () => {
     it('should allow per-trace callbacks to override client-level', async () => {
       const clientOnFlushed = jest.fn();
       const traceOnFlushed = jest.fn();
-      const cbClient = new Client('test-key', { callbacks: { onFlushed: clientOnFlushed } });
+      const cbClient = new Client('mir_srv_test-key', { callbacks: { onFlushed: clientOnFlushed } });
       mockApiGatewayClient.FlushTrace.mockResolvedValue({
         status: { code: ResponseStatus_StatusCode.STATUS_CODE_SUCCESS, errorMessage: undefined },
       });
@@ -2789,7 +2806,7 @@ describe('Client', () => {
 
   describe('sampling', () => {
     it('should return NoopTrace when sampleRate is 0', () => {
-      const sampledClient = new Client('test-key', { sampleRate: 0 });
+      const sampledClient = new Client('mir_srv_test-key', { sampleRate: 0 });
       const trace = sampledClient.trace({ name: 'sampled-out' });
 
       expect(trace).toBeInstanceOf(NoopTrace);
@@ -2798,7 +2815,7 @@ describe('Client', () => {
     });
 
     it('should return real Trace when sampleRate is 1', () => {
-      const sampledClient = new Client('test-key', { sampleRate: 1 });
+      const sampledClient = new Client('mir_srv_test-key', { sampleRate: 1 });
       const trace = sampledClient.trace({ name: 'sampled-in' });
 
       expect(trace).toBeInstanceOf(Trace);
@@ -2807,7 +2824,7 @@ describe('Client', () => {
 
     it('should use custom sampler function', () => {
       const sampler = jest.fn().mockReturnValue(false);
-      const sampledClient = new Client('test-key', { sampler });
+      const sampledClient = new Client('mir_srv_test-key', { sampler });
       const trace = sampledClient.trace({ name: 'custom-sampled' });
 
       expect(sampler).toHaveBeenCalledWith(expect.objectContaining({ name: 'custom-sampled' }));
@@ -2816,7 +2833,7 @@ describe('Client', () => {
 
     it('should prefer sampler over sampleRate', () => {
       const sampler = jest.fn().mockReturnValue(true);
-      const sampledClient = new Client('test-key', { sampleRate: 0, sampler });
+      const sampledClient = new Client('mir_srv_test-key', { sampleRate: 0, sampler });
       const trace = sampledClient.trace({ name: 'sampler-wins' });
 
       expect(trace).not.toBeInstanceOf(NoopTrace);
@@ -3249,7 +3266,7 @@ describe('MiradorProvider', () => {
   beforeEach(() => {
     jest.clearAllMocks();
 
-    mockClient = new Client('test-api-key', { plugins: [Web3Plugin()] });
+    mockClient = new Client('mir_srv_test-api-key', { plugins: [Web3Plugin()] });
 
     mockApiGatewayClient = {
       FlushTrace: jest.fn().mockResolvedValue({
