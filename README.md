@@ -3,12 +3,106 @@
 [![npm](https://img.shields.io/npm/v/@miradorlabs/nodejs-sdk)](https://www.npmjs.com/package/@miradorlabs/nodejs-sdk)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-Server-side Node.js SDK for [Mirador](https://mirador.org) — cross-chain observability for blockchain applications. Capture transactions, correlate bridge flows, and trace operations across EVM and Solana chains from your backend.
+Server-side Node.js SDK for [Mirador](https://mirador.org) — cross-chain observability for blockchain applications.
 
-> Looking for the browser SDK? See [`@miradorlabs/web-sdk`](https://github.com/miradorlabs/web-sdk).
+> [!WARNING]
+> **This SDK is deprecated. Use OpenTelemetry for server-side instrumentation.**
+>
+> Mirador is an OTLP-native platform. For backend services, point a standard
+> OpenTelemetry SDK at Mirador instead of installing this package. You get
+> traces, metrics, and logs through one vendor-neutral pipeline, in any
+> language, with no Mirador-specific API to learn or migrate off later.
+>
+> - **New projects:** start with [OpenTelemetry](#use-opentelemetry-instead) — do not install this package.
+> - **Existing projects:** this package keeps working and stays installable on npm. There are no planned feature releases; critical fixes only. See [Migrating to OpenTelemetry](#migrating-to-opentelemetry).
+> - **Browser apps:** [`@miradorlabs/web-sdk`](https://github.com/miradorlabs/web-sdk) is **not** deprecated. It remains the supported path for browser telemetry, wallet/provider capture, and web3 transaction hints.
+>
+> The reference below is retained for teams still running this SDK.
+
+## Use OpenTelemetry instead
+
+Install the OpenTelemetry SDK for your language and export to Mirador over OTLP.
+No Mirador package required:
+
+```bash
+npm install @opentelemetry/sdk-node @opentelemetry/auto-instrumentations-node \
+            @opentelemetry/exporter-trace-otlp-http
+```
+
+```bash
+export OTEL_SERVICE_NAME=checkout-api
+export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+export OTEL_EXPORTER_OTLP_ENDPOINT=https://otel.mirador.org
+export OTEL_EXPORTER_OTLP_HEADERS=Authorization=mir_srv_xxx
+
+node --require @opentelemetry/auto-instrumentations-node/register app.js
+```
+
+| Transport | Endpoint |
+|-----------|----------|
+| OTLP/HTTP | `https://otel.mirador.org/v1/{traces,metrics,logs}` |
+| OTLP/gRPC | `otel.mirador.org:4317` |
+
+Authenticate with a Mirador server key (`mir_srv_*`) in the standard
+`Authorization` header. The canonical `Bearer` form is also accepted — in
+environment variables, URL-encode the space (`Authorization=Bearer%20mir_srv_xxx`).
+
+**OpenTelemetry SDKs:** [JavaScript / Node.js](https://opentelemetry.io/docs/languages/js/) ·
+[Python](https://opentelemetry.io/docs/languages/python/) ·
+[Go](https://opentelemetry.io/docs/languages/go/) ·
+[Java](https://opentelemetry.io/docs/languages/java/) ·
+[.NET](https://opentelemetry.io/docs/languages/dotnet/) ·
+[Rust](https://opentelemetry.io/docs/languages/rust/) ·
+[Ruby](https://opentelemetry.io/docs/languages/ruby/) ·
+[PHP](https://opentelemetry.io/docs/languages/php/) ·
+[Erlang / Elixir](https://opentelemetry.io/docs/languages/erlang/) ·
+[Swift](https://opentelemetry.io/docs/languages/swift/) ·
+[C++](https://opentelemetry.io/docs/languages/cpp/)
+
+**Mirador OTLP guides:** [Overview](https://docs.mirador.org/opentelemetry/overview) ·
+[Traces](https://docs.mirador.org/opentelemetry/traces) ·
+[Metrics](https://docs.mirador.org/opentelemetry/metrics) ·
+[Logs](https://docs.mirador.org/opentelemetry/logs) ·
+[Enrichment hints](https://docs.mirador.org/opentelemetry/enrichment-hints)
+
+The live gateway also publishes a machine-readable integration contract at
+[`otel.mirador.org/llms.txt`](https://otel.mirador.org/llms.txt) with the exact
+event names, required attributes, and endpoint rules.
+
+## Migrating to OpenTelemetry
+
+The web3 correlation this SDK provides is available from any OTel SDK through
+**enrichment hints** — reserved span events that the Mirador backend picks up and
+expands into the same on-chain lifecycle you get today. Nothing is lost by moving.
+
+| This SDK | OpenTelemetry equivalent |
+|----------|--------------------------|
+| `client.trace({ name })` | `tracer.startSpan(name)` (root span) |
+| `trace.startSpan(name)` / `trace.span(name, fn)` | `tracer.startSpan(name)` / `tracer.startActiveSpan(name, fn)` |
+| `trace.addAttribute(k, v)` / `addAttributes(obj)` | `span.setAttribute(k, v)` / `span.setAttributes(obj)` |
+| `trace.info/warn/error(name, details)` | `span.addEvent(name, attrs)` (+ `span.setStatus`) |
+| `trace.addTags([...])` | Span or resource attributes |
+| `trace.web3.evm.addTxHint(hash, chain)` | `span.addEvent('mirador.web3.evm.txhint', { 'tx.hash': …, 'chain.id': … })` |
+| `trace.web3.safe.addTxHint(hash, chain)` | `span.addEvent('mirador.web3.safe.txhint', { 'safe.tx_hash': …, 'chain.id': … })` |
+| `trace.web3.safe.addMsgHint(hash, chain)` | `span.addEvent('mirador.web3.safe.msghint', { 'safe.message_hash': …, 'chain.id': … })` |
+| `trace.web3.solana.addTxHint(sig)` | `span.addEvent('mirador.web3.solana.txhint', { 'tx.signature': … })` |
+| `trace.web3.relay.addQuoteHint(requestId)` | `span.addEvent('mirador.web3.relayhint', { 'relay.request_id': … })` |
+| `trace.web3.canton.addTxHint(updateId, partyId?)` | `span.addEvent('mirador.web3.canton.txhint', { 'tx.update_id': …, 'canton.party_id': … })` |
+| `trace.close()` | `span.end()` |
+| `sampleRate` / `sampler` | OTel `TraceIdRatioBased` / custom `Sampler` |
+| `debug: true` / custom `logger` | `diag` logger + `OTEL_LOG_LEVEL` |
+
+[Enrichment hints](https://docs.mirador.org/opentelemetry/enrichment-hints)
+documents the canonical event names and their required attributes. Traces from
+both paths land in the same pipeline, so you can migrate service by service and
+keep correlation intact while both are in flight.
+
+---
 
 ## Table of Contents
 
+- [Use OpenTelemetry instead](#use-opentelemetry-instead)
+- [Migrating to OpenTelemetry](#migrating-to-opentelemetry)
 - [Installation](#installation)
 - [Features](#features)
 - [Quick Start](#quick-start)
@@ -32,6 +126,9 @@ Server-side Node.js SDK for [Mirador](https://mirador.org) — cross-chain obser
 - [License](#license)
 
 ## Installation
+
+> [!NOTE]
+> Deprecated. New services should use [OpenTelemetry](#use-opentelemetry-instead) instead.
 
 ```bash
 npm install @miradorlabs/nodejs-sdk
@@ -896,7 +993,9 @@ See the [example README](./example/README.md) for full documentation.
 
 - [Mirador Website](https://mirador.org)
 - [Documentation](https://docs.mirador.org)
-- [Web SDK](https://github.com/miradorlabs/web-sdk) — browser-side companion
+- [OpenTelemetry at Mirador](https://docs.mirador.org/opentelemetry/overview) — the supported path for server-side instrumentation
+- [Enrichment hints](https://docs.mirador.org/opentelemetry/enrichment-hints) — web3 correlation from any OTel SDK
+- [Web SDK](https://github.com/miradorlabs/web-sdk) — browser-side companion, actively supported
 - [CLI](https://github.com/miradorlabs/mirador-cli) — query traces from the terminal
 
 ## License
